@@ -115,10 +115,12 @@ INSERT INTO teto_google (id, valor_usd, alterado_por)
 VALUES (1, 50, 'Curador, decisão de 12/11/2026')
 ON CONFLICT DO NOTHING;
 
--- Visão de domínio: os eletropostos internalizados na base (cópia do OCM e registros próprios), no vocabulário do REVOLT.
--- É a base de GET /eletropostos, que acrescenta os lugares do Google (esses não são internalizados).
--- Um posto do OCM com verificação própria é uma linha só; o registro próprio vira linha separada só quando
--- não há posto do OCM ligado a ele na cópia (posto novo ou que saiu da fonte).
+-- Visão de domínio: todos os eletropostos da base no vocabulário do REVOLT. É o que GET /eletropostos lê.
+-- - Cópia do OCM. Um posto do OCM com verificação própria é uma linha só.
+-- - Registro próprio: linha separada só quando não há posto do OCM ligado a ele na cópia (posto novo ou que saiu da fonte).
+-- - Lugares do Google trazidos pela varredura, com coordenada de até 30 dias (RN07). Deles só há identificador e
+--   coordenada: nome, endereço e conectores ficam vazios porque não podem ser guardados. duplicado_do_ocm marca o lugar
+--   a menos de 100 m de um posto do OCM entregue (fonte e provedor ligados): é o mesmo posto e não sai na lista.
 DROP VIEW IF EXISTS eletroposto;
 CREATE VIEW eletroposto AS
 WITH ultima AS (
@@ -177,7 +179,8 @@ SELECT 'ocm-' || o.ocm_id AS id,
        u.google_place_id,
        u.posto_proprio_id,
        o.ocm_id,
-       o.local
+       o.local,
+       NULL::boolean AS duplicado_do_ocm
 FROM ocm_posto o
 LEFT JOIN ultima u ON u.ocm_id = o.ocm_id
 UNION ALL
@@ -216,6 +219,32 @@ SELECT 'propria-' || u.posto_proprio_id,
        u.google_place_id,
        u.posto_proprio_id,
        u.ocm_id,
-       u.local
+       u.local,
+       NULL
 FROM ultima u
-WHERE u.ocm_id IS NULL OR NOT EXISTS (SELECT 1 FROM ocm_posto o WHERE o.ocm_id = u.ocm_id);
+WHERE u.ocm_id IS NULL OR NOT EXISTS (SELECT 1 FROM ocm_posto o WHERE o.ocm_id = u.ocm_id)
+UNION ALL
+SELECT 'google-' || g.place_id,
+       'google',
+       NULL,
+       NULL,
+       ST_Y(g.local::geometry),
+       ST_X(g.local::geometry),
+       'desconhecida',
+       '[]'::jsonb,
+       NULL,
+       NULL,
+       NULL,
+       'Termos do Google Maps Platform',
+       g.coordenada_obtida_em,
+       false,
+       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, -- observação própria: não há
+       g.place_id,
+       NULL,
+       NULL,
+       g.local,
+       EXISTS (SELECT 1 FROM ocm_posto o
+               WHERE ST_DWithin(o.local, g.local, 100) AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
+                 AND o.provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado))
+FROM google_lugar g
+WHERE g.coordenada_obtida_em >= now() - interval '30 days';

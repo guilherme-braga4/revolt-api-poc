@@ -73,7 +73,7 @@ function daBase(e, propriaLigada: boolean) {
 
 // Lugar do Google na lista: só o que pode ser guardado (identificador e coordenada). O resto vem no detalhe.
 const daListaGoogle = (g) => ({
-  id: `google-${g.place_id}`,
+  id: g.id,
   nome: null,
   endereco: null,
   localizacao: { lat: g.lat, lng: g.lng },
@@ -82,7 +82,7 @@ const daListaGoogle = (g) => ({
   preco: null,
   horario: null,
   pagamento: null,
-  fonte: fonteGoogle(g.coordenada_obtida_em),
+  fonte: fonteGoogle(g.data_fonte),
   verificacao: NAO_VERIFICADO,
 });
 
@@ -109,14 +109,12 @@ class Area {
   @Type(() => Number) @IsNumber() @Min(0.1) @Max(3000) raio_km: number;
 }
 
-// Lugar do Google a menos disto de um posto do OCM entregue é tratado como o mesmo posto e não sai na lista.
-const DUPLICADO_DO_OCM_M = 100;
-
 // Respeita as fontes e os provedores desligados pelo Curador (RF10).
 const FONTES_LIGADAS = `(
   (origem = 'open_charge_map' AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
      AND provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado))
-  OR (origem = 'verificacao_propria' AND (SELECT ligada FROM fonte WHERE nome = 'propria')))`;
+  OR (origem = 'verificacao_propria' AND (SELECT ligada FROM fonte WHERE nome = 'propria'))
+  OR (origem = 'google' AND (SELECT ligada FROM fonte WHERE nome = 'google')))`;
 
 // O que o App chama. Fala só o vocabulário do REVOLT; origem, licença e condições de uso vão no bloco "fonte".
 @Controller('eletropostos')
@@ -134,22 +132,18 @@ export class EletropostosController {
     const area = [q.lng, q.lat, q.raio_km * 1000];
     const naArea = `ST_DWithin(local, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)`;
 
-    const base = await this.db.query(`SELECT * FROM eletroposto WHERE ${naArea} AND ${FONTES_LIGADAS}`, area);
-    // Coordenada vencida não é entregue mesmo antes da expiração (RN07). Lugar vinculado a um item entregue sai da lista (RN12).
-    // Lugar perto de um posto do OCM entregue é o mesmo posto: sai da lista para não duplicar.
-    const google = !ligadas.google
-      ? []
-      : await this.db.query(
-          `SELECT place_id, coordenada_obtida_em, ST_Y(local::geometry) AS lat, ST_X(local::geometry) AS lng,
-                  EXISTS (SELECT 1 FROM ocm_posto o
-                          WHERE ST_DWithin(o.local, g.local, $4) AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
-                            AND o.provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado)) AS duplicado
-           FROM google_lugar g
-           WHERE coordenada_obtida_em >= now() - interval '30 days' AND ${naArea}
-             AND place_id NOT IN (SELECT google_place_id FROM eletroposto WHERE google_place_id IS NOT NULL AND ${FONTES_LIGADAS})`,
-          [...area, DUPLICADO_DO_OCM_M],
-        );
-    const googleNovos = google.filter((g) => !g.duplicado);
+    // Tudo vem da view eletroposto. Lugar do Google vinculado a um item entregue sai da lista (RN12), e o que duplica
+    // um posto do OCM entregue também (duplicado_do_ocm, calculado na view).
+    const linhas = await this.db.query(
+      `SELECT * FROM eletroposto
+       WHERE ${naArea} AND ${FONTES_LIGADAS}
+         AND (origem <> 'google' OR google_place_id NOT IN (
+               SELECT google_place_id FROM eletroposto WHERE origem <> 'google' AND google_place_id IS NOT NULL AND ${FONTES_LIGADAS}))`,
+      area,
+    );
+    const base = linhas.filter((e) => e.origem !== 'google');
+    const google = linhas.filter((e) => e.origem === 'google');
+    const googleNovos = google.filter((g) => !g.duplicado_do_ocm);
 
     return {
       area: q,

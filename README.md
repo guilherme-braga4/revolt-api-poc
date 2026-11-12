@@ -29,15 +29,24 @@ Use a conexão PostgreSQL **REVOLT POC**:
 | Usuário | `revolt` |
 | Senha | `revolt_local` |
 
-Os eletropostos internalizados na base estão na view **`eletroposto`** (revolt → Schemas → public → Views). A view já fala o vocabulário do REVOLT. Ela junta a cópia do OCM e os registros próprios, com a última verificação de cada um.
+Os eletropostos internalizados na base estão na view **`eletroposto`** (revolt → Schemas → public → Views). A view já fala o vocabulário do REVOLT. Ela junta as três origens: a cópia do OCM, os registros próprios, com a última verificação de cada um, e os lugares do Google trazidos pela varredura.
 
 ```sql
-SELECT id, nome, situacao, conectores, provedor, licenca, verificado, data_observacao
+-- Contagem por origem
+SELECT origem, count(*) AS total, count(*) FILTER (WHERE duplicado_do_ocm) AS duplicados_do_ocm
+FROM eletroposto GROUP BY origem;
+
+-- O que o App vê (sem os lugares do Google colados a um posto do OCM)
+SELECT id, origem, nome, situacao, lat, lng, provedor, verificado
 FROM eletroposto
-ORDER BY nome;
+WHERE NOT coalesce(duplicado_do_ocm, false)
+ORDER BY origem, nome;
 ```
 
-- Os lugares do Google não estão na view. Deles a base guarda só o identificador e a coordenada (até 30 dias), na tabela `google_lugar`, e o andamento da varredura fica em `google_celula`.
+- Do Google a base guarda só o identificador e a coordenada. Por isso as linhas `google` vêm com `nome`, conectores e endereço vazios, e a situação é `desconhecida`. A ficha completa só existe no detalhe da API, buscada na hora e não gravada.
+- A coluna `duplicado_do_ocm` marca o lugar do Google a menos de 100 m de um posto do OCM entregue. O App não mostra esse lugar. Nas outras origens a coluna é nula.
+- A view só mostra coordenadas do Google com até 30 dias, como pedem os termos. As tabelas de origem são `google_lugar` (identificador e coordenada) e `google_celula` (andamento da varredura).
+- A view não aplica as chaves de fonte e de provedor. A API aplica, e por isso a contagem do App pode ficar um pouco abaixo da view.
 - As colunas `local` são `geography`. Para ver a coordenada, use `ST_AsText(local)`. A view também traz `lat` e `lng`.
 - As tabelas cruas continuam disponíveis para conferência: `ocm_posto`, `posto_proprio`, `verificacao` etc.
 
