@@ -1,0 +1,217 @@
+{
+  "info": {
+    "name": "REVOLT · App (POC)",
+    "description": "Os dois endpoints que o App chama, contra a API local com a base real (environment \"REVOLT API POC · local (base real)\", porta 3333).\n\nAntes, suba a API com `npm start`. Para rodar pelo terminal: `npm run test:app`.\n\nOs testes conferem só o formato do REVOLT, não valores, porque a base real muda a cada atualização do OCM. Esta coleção só lê: não apaga nem altera nada. A coleção de testes \"REVOLT · API agregadora (POC)\" é outra coisa e não deve rodar neste environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Eletropostos da área",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/eletropostos?lat=-23.1896&lng=-45.8841&raio_km=3",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "eletropostos"
+          ],
+          "query": [
+            {
+              "key": "lat",
+              "value": "-23.1896",
+              "description": "Latitude do centro da área."
+            },
+            {
+              "key": "lng",
+              "value": "-45.8841",
+              "description": "Longitude do centro da área."
+            },
+            {
+              "key": "raio_km",
+              "value": "3",
+              "description": "Raio em km, de 0,1 a 3.000."
+            }
+          ]
+        },
+        "description": "Eletropostos de uma área, no formato do REVOLT: cópia do OCM, registros próprios e lugares do Google.\n\n**Custo:** nenhum. O pedido lê só a base e não consulta o Google, de qualquer tamanho. Para ver o Brasil inteiro: `lat=-14.2`, `lng=-51.9` e `raio_km=3000`.\n\nOs lugares do Google vêm só com `id` e `localizacao`, trazidos pela varredura. O resto vem no detalhe. Lugar do Google a menos de 100 m de um posto do OCM não aparece."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "",
+              "const SITUACOES = ['operacional', 'fora_de_operacao', 'planejado', 'fechado_definitivamente', 'desconhecida'];",
+              "const TIPOS = ['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO'];",
+              "function confere(e) {",
+              "  pm.expect(e, e.id).to.have.all.keys('id', 'nome', 'endereco', 'localizacao', 'situacao', 'conectores', 'preco', 'horario', 'pagamento', 'fonte', 'verificacao');",
+              "  pm.expect(e.id).to.match(/^(ocm|propria|google)-/);",
+              "  pm.expect(e.localizacao.lat, e.id).to.be.a('number');",
+              "  pm.expect(e.localizacao.lng, e.id).to.be.a('number');",
+              "  pm.expect(e.situacao, e.id).to.be.oneOf(SITUACOES);",
+              "  for (const c of e.conectores || []) pm.expect(c.tipo, e.id).to.be.oneOf(TIPOS);",
+              "  pm.expect(e.fonte.origem, e.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+              "  pm.expect(e.fonte.licenca, e.id).to.be.a('string').and.not.empty;",
+              "  pm.expect(e.fonte.condicoes_uso, e.id).to.be.a('string').and.not.empty;",
+              "  pm.expect(e.verificacao.situacao, e.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+              "}",
+              "pm.test('Nenhum campo cru do OCM ou do Google', () => {",
+              "  const texto = pm.response.text();",
+              "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+              "});",
+              "pm.test('Resposta traz área, fontes e eletropostos', () => pm.expect(r).to.have.all.keys('area', 'fontes', 'eletropostos'));",
+              "pm.test('Todo eletroposto no formato do REVOLT', () => r.eletropostos.forEach(confere));"
+            ]
+          }
+        }
+      ],
+      "response": [
+        {
+          "name": "Exemplo: São José dos Campos (sem os 20 lugares do Google, que não podem ser gravados)",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/eletropostos?lat=-23.1896&lng=-45.8841&raio_km=3",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "eletropostos"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "-23.1896",
+                  "description": "Latitude do centro da área."
+                },
+                {
+                  "key": "lng",
+                  "value": "-45.8841",
+                  "description": "Longitude do centro da área."
+                },
+                {
+                  "key": "raio_km",
+                  "value": "3",
+                  "description": "Raio em km, de 0,1 a 3.000."
+                }
+              ]
+            },
+            "description": "Eletropostos de uma área, no formato do REVOLT: cópia do OCM, registros próprios e lugares do Google.\n\n**Custo:** nenhum. O pedido lê só a base e não consulta o Google, de qualquer tamanho. Para ver o Brasil inteiro: `lat=-14.2`, `lng=-51.9` e `raio_km=3000`.\n\nOs lugares do Google vêm só com `id` e `localizacao`, trazidos pela varredura. O resto vem no detalhe. Lugar do Google a menos de 100 m de um posto do OCM não aparece."
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"area\": {\n    \"lat\": -23.1896,\n    \"lng\": -45.8841,\n    \"raio_km\": 3\n  },\n  \"fontes\": {\n    \"open_charge_map\": {\n      \"ligada\": true,\n      \"itens\": 2\n    },\n    \"verificacao_propria\": {\n      \"ligada\": true,\n      \"itens\": 0\n    },\n    \"google\": {\n      \"ligada\": true,\n      \"itens\": 20,\n      \"duplicados_do_ocm\": 0\n    }\n  },\n  \"eletropostos\": [\n    {\n      \"id\": \"ocm-481262\",\n      \"nome\": \"Volvo - Faberge SJC\",\n      \"endereco\": \"Avenida Doutor Eduardo Cury, 350, Jardim da Colinas, São José dos Campos, SP, São José dos Campos\",\n      \"localizacao\": {\n        \"lat\": -23.200982,\n        \"lng\": -45.909631\n      },\n      \"situacao\": \"fora_de_operacao\",\n      \"conectores\": [\n        {\n          \"tipo\": \"TIPO_2\",\n          \"potencia_kw\": 7,\n          \"quantidade\": 1,\n          \"disponiveis\": null\n        }\n      ],\n      \"preco\": null,\n      \"horario\": null,\n      \"pagamento\": null,\n      \"fonte\": {\n        \"origem\": \"open_charge_map\",\n        \"provedor\": \"Easy Volt\",\n        \"licenca\": \"CC0\",\n        \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Easy Volt\\\" via Open Charge Map.\",\n        \"data\": \"2026-11-12T14:49:46.836Z\"\n      },\n      \"verificacao\": {\n        \"situacao\": \"nao_verificado\"\n      }\n    },\n    {\n      \"id\": \"ocm-514205\",\n      \"nome\": \"VoltchZ_Arena Sunset\",\n      \"endereco\": \"Rua Santa Ana, 200, São José dos Campos\",\n      \"localizacao\": {\n        \"lat\": -23.211884,\n        \"lng\": -45.889717\n      },\n      \"situacao\": \"fora_de_operacao\",\n      \"conectores\": [\n        {\n          \"tipo\": \"TIPO_2\",\n          \"potencia_kw\": 7,\n          \"quantidade\": 1,\n          \"disponiveis\": null\n        }\n      ],\n      \"preco\": null,\n      \"horario\": null,\n      \"pagamento\": null,\n      \"fonte\": {\n        \"origem\": \"open_charge_map\",\n        \"provedor\": \"Spott\",\n        \"licenca\": \"CC0\",\n        \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Spott\\\" via Open Charge Map.\",\n        \"data\": \"2026-11-12T14:49:46.836Z\"\n      },\n      \"verificacao\": {\n        \"situacao\": \"nao_verificado\"\n      }\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "Detalhe do eletroposto",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/eletropostos/:id",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "eletropostos",
+            ":id"
+          ],
+          "variable": [
+            {
+              "key": "id",
+              "value": "ocm-481262",
+              "description": "Um `id` da lista: `ocm-…`, `propria-…` ou `google-…`."
+            }
+          ]
+        },
+        "description": "Detalhe de um eletroposto, no mesmo formato de cada item da lista.\n\n**Custo:** com `ocm-…` ou `propria-…`, o detalhe vem da base e não tem custo. Com `google-…`, a API busca a ficha no Google na hora, e a consulta é paga, com 1.000 gratuitas por mês e dentro do teto de US$ 50. A ficha é traduzida para o formato do REVOLT e não é gravada."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "",
+              "const SITUACOES = ['operacional', 'fora_de_operacao', 'planejado', 'fechado_definitivamente', 'desconhecida'];",
+              "const TIPOS = ['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO'];",
+              "function confere(e) {",
+              "  pm.expect(e, e.id).to.have.all.keys('id', 'nome', 'endereco', 'localizacao', 'situacao', 'conectores', 'preco', 'horario', 'pagamento', 'fonte', 'verificacao');",
+              "  pm.expect(e.id).to.match(/^(ocm|propria|google)-/);",
+              "  pm.expect(e.localizacao.lat, e.id).to.be.a('number');",
+              "  pm.expect(e.localizacao.lng, e.id).to.be.a('number');",
+              "  pm.expect(e.situacao, e.id).to.be.oneOf(SITUACOES);",
+              "  for (const c of e.conectores || []) pm.expect(c.tipo, e.id).to.be.oneOf(TIPOS);",
+              "  pm.expect(e.fonte.origem, e.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+              "  pm.expect(e.fonte.licenca, e.id).to.be.a('string').and.not.empty;",
+              "  pm.expect(e.fonte.condicoes_uso, e.id).to.be.a('string').and.not.empty;",
+              "  pm.expect(e.verificacao.situacao, e.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+              "}",
+              "pm.test('Nenhum campo cru do OCM ou do Google', () => {",
+              "  const texto = pm.response.text();",
+              "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+              "});",
+              "pm.test('É o eletroposto pedido', () => pm.expect(r.id).to.eql(decodeURIComponent(pm.request.url.getPath().split('/').pop())));",
+              "pm.test('No formato do REVOLT', () => confere(r));"
+            ]
+          }
+        }
+      ],
+      "response": [
+        {
+          "name": "Exemplo: ocm-481262",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/eletropostos/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "eletropostos",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ocm-481262",
+                  "description": "Um `id` da lista: `ocm-…`, `propria-…` ou `google-…`."
+                }
+              ]
+            },
+            "description": "Detalhe de um eletroposto, no mesmo formato de cada item da lista.\n\n**Custo:** com `ocm-…` ou `propria-…`, o detalhe vem da base e não tem custo. Com `google-…`, a API busca a ficha no Google na hora, e a consulta é paga, com 1.000 gratuitas por mês e dentro do teto de US$ 50. A ficha é traduzida para o formato do REVOLT e não é gravada."
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json; charset=utf-8"
+            }
+          ],
+          "body": "{\n  \"id\": \"ocm-481262\",\n  \"nome\": \"Volvo - Faberge SJC\",\n  \"endereco\": \"Avenida Doutor Eduardo Cury, 350, Jardim da Colinas, São José dos Campos, SP, São José dos Campos\",\n  \"localizacao\": {\n    \"lat\": -23.200982,\n    \"lng\": -45.909631\n  },\n  \"situacao\": \"fora_de_operacao\",\n  \"conectores\": [\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 7,\n      \"quantidade\": 1,\n      \"disponiveis\": null\n    }\n  ],\n  \"preco\": null,\n  \"horario\": null,\n  \"pagamento\": null,\n  \"fonte\": {\n    \"origem\": \"open_charge_map\",\n    \"provedor\": \"Easy Volt\",\n    \"licenca\": \"CC0\",\n    \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Easy Volt\\\" via Open Charge Map.\",\n    \"data\": \"2026-11-12T14:49:46.836Z\"\n  },\n  \"verificacao\": {\n    \"situacao\": \"nao_verificado\"\n  }\n}"
+        }
+      ]
+    }
+  ]
+}

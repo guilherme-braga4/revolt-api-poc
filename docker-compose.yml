@@ -1,0 +1,24 @@
+# Banco local da POC: Postgres com PostGIS, para consultas por área.
+# A imagem oficial do PostGIS só existe para amd64; no Mac com Apple Silicon roda pela emulação do Docker Desktop.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64
+    container_name: revolt-poc-db
+    environment:
+      POSTGRES_USER: revolt
+      POSTGRES_PASSWORD: revolt_local
+      POSTGRES_DB: revolt
+    ports:
+      - "5433:5432"
+    volumes:
+      - dados:/var/lib/postgresql/data
+      - ./db/20_banco_teste.sql:/docker-entrypoint-initdb.d/20_banco_teste.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "revolt", "-d", "revolt"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dados:

@@ -1,0 +1,3105 @@
+{
+  "info": {
+    "name": "REVOLT · API agregadora (POC)",
+    "description": "Testes da POC da API agregadora de eletropostos do REVOLT, contra os critérios de aceite do PRD \"Obtenção dos Dados dos Eletropostos\" (versão 0.2, não aprovada).\n\nRoda contra a API de teste (porta 3334) e o servidor de apoio (porta 4010), que faz o papel do Open Charge Map e do Google Places. Nenhum pedido chega aos serviços reais.\n\nRode a coleção inteira, na ordem: cada pasta depende do estado deixado pela anterior. O primeiro pedido zera o banco de teste.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "chamadas_antes",
+      "value": ""
+    },
+    {
+      "key": "ocm_ids_sjc",
+      "value": ""
+    },
+    {
+      "key": "coord_dubleA_antes",
+      "value": ""
+    },
+    {
+      "key": "posto_id",
+      "value": ""
+    },
+    {
+      "key": "posto_novo_id",
+      "value": ""
+    },
+    {
+      "key": "posto_ezvolt_id",
+      "value": ""
+    },
+    {
+      "key": "coord_massa01_antes",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0 · Preparação",
+      "description": "Zera o banco revolt_teste e o estado dos dublês.",
+      "item": [
+        {
+          "name": "Zerar banco de teste e dublês",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.eql('revolt_teste'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 · RF01 · Cópia do Open Charge Map",
+      "description": "Importação do Brasil pelo acesso ao vivo (dublê): só registros abertos e sem PlugShare, com provedor, licença e data (RN01, RN03, RN04).",
+      "item": [
+        {
+          "name": "Importar o Brasil do OCM",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Atualização terminou com sucesso', () => pm.expect(r.resultado).to.eql('ok'));",
+                  "pm.test('Recebeu 7 registros e aceitou 4', () => {",
+                  "  pm.expect(r.contagens.recebidos).to.eql(7);",
+                  "  pm.expect(r.contagens.aceitos).to.eql(4);",
+                  "});",
+                  "pm.test('Registro com licença não aberta descartado (RN03)', () => pm.expect(r.contagens.descartados.licenca_nao_aberta).to.eql(1));",
+                  "pm.test('Registros que citam o PlugShare descartados, no comentário e no comentário de usuário (RN04)', () => pm.expect(r.contagens.descartados.cita_plugshare).to.eql(2));",
+                  "pm.test('Primeira carga: todos os aceitos entram como novos', () => pm.expect(r.contagens.novos).to.eql(4));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('A importação consultou o OCM uma vez', () => pm.expect(depois.ocm - antes.ocm).to.eql(1));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Cópia guardada: provedor, licença e data em cada registro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const linhas = pm.response.json();",
+                  "const ids = linhas.map((l) => l.ocm_id).sort();",
+                  "pm.test('Só os registros abertos e sem PlugShare estão na cópia', () => pm.expect(ids).to.eql([9001, 9002, 9006, 9010]));",
+                  "pm.test('Registro com licença fechada (9003) não entrou (RN03)', () => pm.expect(ids).to.not.include(9003));",
+                  "pm.test('Registros que citam o PlugShare (9004 e 9005) não entraram (RN04)', () => {",
+                  "  pm.expect(ids).to.not.include(9004);",
+                  "  pm.expect(ids).to.not.include(9005);",
+                  "});",
+                  "pm.test('Cada registro tem provedor, licença aberta e data de obtenção (RN01)', () => {",
+                  "  for (const l of linhas) {",
+                  "    pm.expect(l.provedor, l.ocm_id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(l.licenca, l.ocm_id).to.be.oneOf(['CC0', 'CC BY 4.0']);",
+                  "    pm.expect(l.obtido_em, l.ocm_id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "pm.test('Registro não operacional na fonte entrou com essa situação (UC01)', () => pm.expect(linhas.find((l) => l.ocm_id === 9002).operacional).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/ocm_posto"
+          }
+        },
+        {
+          "name": "Nenhum registro da cópia cita o PlugShare",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Nenhum campo de nenhum registro da cópia contém \"plugshare\" (RN04)', () => pm.expect(pm.response.json().por_tabela.ocm_posto).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=plugshare"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 · RF03 e RF04 · Varredura do Google e entrega por área",
+      "description": "A varredura traz do Google só identificador e coordenada, célula por célula. O pedido de área lê só a base, sem consultar fonte externa.",
+      "item": [
+        {
+          "name": "Seed: varredura da região de teste",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('A busca da célula voltou cheia (20) e ela foi dividida em 4: 5 consultas', () => {",
+                  "  pm.expect(r.subdivididas).to.eql(1);",
+                  "  pm.expect(r.consultadas).to.eql(5);",
+                  "});",
+                  "pm.test('Terminou sem parada, sem célula pendente e sem célula mínima cheia', () => {",
+                  "  pm.expect(r.parada).to.eql(null);",
+                  "  pm.expect(r.pendentes).to.eql(0);",
+                  "  pm.expect(r.cheias_no_minimo).to.eql(0);",
+                  "});",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, x) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const c = x.json();",
+                  "  pm.test('Cada consulta é uma busca no Google', () => pm.expect(c.chamadas.google_busca - antes.google_busca).to.eql(5));",
+                  "  pm.test('A busca pediu ao Google só identificador e coordenada', () => pm.expect(c.mascaras.busca).to.eql('places.id,places.location'));",
+                  "  pm.test('Nenhum círculo passou do limite de 50 km do Google', () => pm.expect(c.raio_max_m).to.be.at.most(50000));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Varredura sem célula vencida não chama o Google",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma célula consultada', () => pm.expect(pm.response.json().consultadas).to.eql(0));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Pedido da área lê só a base",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('ocm_ids_sjc', JSON.stringify(itens.filter((i) => i.fonte.origem === 'open_charge_map').map((i) => i.id).sort()));",
+                  "pm.test('Traz os postos do OCM e os lugares do Google da área', () => pm.expect(ids).to.have.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB']));",
+                  "pm.test('Lugar do Google a 40 m do posto 9001 é o mesmo posto e não sai duplicado', () => {",
+                  "  pm.expect(ids).to.not.include('google-dubleOcm');",
+                  "  pm.expect(resposta.fontes.google.duplicados_do_ocm).to.eql(1);",
+                  "});",
+                  "pm.test('Posto do OCM verificado \"hoje\" na fonte é entregue como não verificado (RN13)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.situacao).to.eql('nao_verificado'));",
+                  "pm.test('Lugar do Google traz as condições de uso do Google (RN05)', () => pm.expect(itens.find((i) => i.fonte.origem === 'google').fonte.condicoes_uso).to.include('mapa do Google'));",
+                  "pm.test('Posto do OCM traz a atribuição ao provedor (RN05)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').fonte.condicoes_uso).to.include('Open Charge Map Contributors'));",
+                  "pm.test('Posto do OCM no formato do REVOLT: nome, situação e conector traduzidos', () => {",
+                  "  const e = itens.find((i) => i.id === 'ocm-9001');",
+                  "  pm.expect(e.nome).to.eql('Posto dublê 9001');",
+                  "  pm.expect(e.situacao).to.eql('operacional');",
+                  "  pm.expect(e.conectores).to.eql([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2, disponiveis: null }]);",
+                  "  pm.expect(itens.find((i) => i.id === 'ocm-9002').situacao).to.eql('fora_de_operacao');",
+                  "});",
+                  "pm.test('Lugar do Google na lista traz só identificador e localização', () => {",
+                  "  const g = itens.find((i) => i.id === 'google-dubleA');",
+                  "  pm.expect(g.nome).to.eql(null);",
+                  "  pm.expect(g.conectores).to.eql(null);",
+                  "  pm.expect(g.localizacao.lat).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google na hora do pedido', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
+                  "  pm.test('O OCM não é consultado na hora do pedido', () => pm.expect(depois.ocm - antes.ocm).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Visão do país: raio de 3.000 km",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Todos os postos do OCM da base', () => pm.expect(ids.filter((i) => i.startsWith('ocm-')).sort()).to.eql(['ocm-9001', 'ocm-9002', 'ocm-9006', 'ocm-9010']));",
+                  "pm.test('Todos os lugares do Google, menos o duplicado do OCM', () => {",
+                  "  pm.expect(ids.filter((i) => i.startsWith('google-'))).to.have.length(26);",
+                  "  pm.expect(ids).to.include('google-massa01');",
+                  "});",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-14.2&lng=-51.9&raio_km=3000"
+          }
+        },
+        {
+          "name": "Raio acima de 3.000 km é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-14.2&lng=-51.9&raio_km=3001"
+          }
+        },
+        {
+          "name": "Do Google ficou guardado só identificador, coordenada e data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const linhas = pm.response.json();",
+                  "pm.test('Os 27 lugares da região guardados, uma vez cada', () => {",
+                  "  pm.expect(linhas).to.have.length(27);",
+                  "  pm.expect(linhas.map((l) => l.place_id)).to.include.members(['dubleA', 'dubleB', 'dubleOcm', 'massa01', 'massa24']);",
+                  "});",
+                  "pm.test('Cada lugar tem só place_id, coordenada e data (RN06)', () => {",
+                  "  for (const l of linhas) pm.expect(Object.keys(l)).to.have.members(['place_id', 'local', 'coordenada_obtida_em']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/google_lugar"
+          }
+        },
+        {
+          "name": "Nome que o Google devolveu na busca não foi guardado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Nenhuma tabela contém o nome do lugar (RN06)', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=Eletroposto Dublê"
+          }
+        },
+        {
+          "name": "Área sem postos: lista vazia, com as fontes consultadas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Lista vazia', () => pm.expect(itens).to.eql([]));",
+                  "pm.test('Informa as três fontes e se estavam ligadas (UC02)', () => {",
+                  "  pm.expect(resposta.fontes.open_charge_map.ligada).to.eql(true);",
+                  "  pm.expect(resposta.fontes.verificacao_propria.ligada).to.eql(true);",
+                  "  pm.expect(resposta.fontes.google.ligada).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-3.1&lng=-60.0&raio_km=2"
+          }
+        },
+        {
+          "name": "Área inválida é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=99&lng=-45&raio_km=5"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 · RF02 · Atualização sem perder dados",
+      "description": "Falha no meio da atualização mantém a cópia anterior e fica visível ao Curador. Depois, uma atualização boa conta novos, alterados e retirados.",
+      "item": [
+        {
+          "name": "Dublê do OCM vai falhar no meio da resposta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"falha_no_meio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualização com falha no meio é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));",
+                  "pm.test('Resultado falha, com motivo', () => {",
+                  "  pm.expect(pm.response.json().resultado).to.eql('falha');",
+                  "  pm.expect(pm.response.json().motivo).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "A falha aparece para o Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ultima = pm.response.json()[0];",
+                  "pm.test('Última atualização registrada como falha, com motivo (RF02)', () => {",
+                  "  pm.expect(ultima.resultado).to.eql('falha');",
+                  "  pm.expect(ultima.motivo).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizacoes"
+          }
+        },
+        {
+          "name": "Entrega continua igual à cópia anterior",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Mesmos postos do OCM de antes da falha (RF02)', () => pm.expect(JSON.stringify(itens.filter((i) => i.fonte.origem === 'open_charge_map').map((i) => i.id).sort())).to.eql(pm.collectionVariables.get('ocm_ids_sjc')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Dublê do OCM fora do ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"fora_do_ar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualização com o OCM fora do ar é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));",
+                  "pm.test('Motivo cita a resposta do OCM', () => pm.expect(pm.response.json().motivo).to.include('503'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Cópia segue intacta depois das falhas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Os mesmos 4 registros', () => pm.expect(pm.response.json().map((l) => l.ocm_id).sort()).to.eql([9001, 9002, 9006, 9010]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/ocm_posto"
+          }
+        },
+        {
+          "name": "Dublê do OCM com a segunda versão da fonte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"v2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualização conta novos, alterados e retirados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const c = pm.response.json().contagens;",
+                  "pm.test('1 novo (9011), 1 alterado (9001) e 1 retirado (9010) (UC01)', () => {",
+                  "  pm.expect(c.novos).to.eql(1);",
+                  "  pm.expect(c.alterados).to.eql(1);",
+                  "  pm.expect(c.retirados).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 · RF09 · Teto de gasto com o Google",
+      "description": "Gasto do mês por tipo de consulta e bloqueio do Google quando o teto é atingido (RN15).",
+      "item": [
+        {
+          "name": "Gasto do mês por tipo de consulta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const g = pm.response.json();",
+                  "pm.test('Teto vigente de US$ 50', () => pm.expect(g.teto_usd).to.eql(50));",
+                  "pm.test('Gasto separado por tipo de consulta', () => pm.expect(g.por_tipo.map((t) => t.tipo)).to.have.members(['busca_area', 'ficha']));",
+                  "pm.test('Teto não atingido', () => pm.expect(g.teto_atingido).to.eql(false));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  pm.test('Buscas de área contadas batem com as chamadas feitas ao Google', () => pm.expect(g.por_tipo.find((t) => t.tipo === 'busca_area').consultas).to.eql(r.json().chamadas.google_busca));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Curador baixa o teto para zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const g = pm.response.json();",
+                  "pm.test('Teto atingido e Curador avisado (RF09)', () => {",
+                  "  pm.expect(g.teto_atingido).to.eql(true);",
+                  "  pm.expect(g.aviso).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Mudança registrada com autor', () => pm.expect(g.teto_alterado_por).to.eql('Curador'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 0,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Preparar: células consultadas há 26 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/celulas-antigas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dias\": 26\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Com o teto atingido, a varredura não chama o Google",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Parou por teto atingido, sem consultar nada (RN15)', () => {",
+                  "  pm.expect(r.parada).to.eql('teto_atingido');",
+                  "  pm.expect(r.consultadas).to.eql(0);",
+                  "});",
+                  "pm.test('As células vencidas continuam pendentes', () => pm.expect(r.pendentes).to.be.above(0));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Com o teto atingido, a ficha fica indisponível",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Motivo: teto atingido', () => pm.expect(pm.response.json().motivo).to.eql('teto_atingido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Curador volta o teto para US$ 50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Teto liberado', () => pm.expect(pm.response.json().teto_atingido).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 50,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 · RF10 · Ligar e desligar fontes",
+      "description": "Desligar uma fonte ou um provedor do OCM tira só os dados dele da entrega.",
+      "item": [
+        {
+          "name": "Desligar a camada do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Desligada, com data e autor', () => {",
+                  "  pm.expect(pm.response.json().ligada).to.eql(false);",
+                  "  pm.expect(pm.response.json().alterada_por).to.eql('Curador');",
+                  "  pm.expect(pm.response.json().alterada_em).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Google desligado: entrega só OCM e próprios",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Nenhum lugar do Google entregue', () => pm.expect(itens.filter((i) => i.fonte.origem === 'google')).to.eql([]));",
+                  "pm.test('OCM continua sendo entregue', () => pm.expect(ids).to.include.members(['ocm-9001', 'ocm-9002']));",
+                  "pm.test('Resposta informa que o Google está desligado', () => pm.expect(resposta.fontes.google.ligada).to.eql(false));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=7"
+          }
+        },
+        {
+          "name": "Varredura com o Google desligado não chama o Google",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Parou: fonte desligada', () => pm.expect(pm.response.json().parada).to.eql('desligada'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ficha com o Google desligado fica indisponível",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Motivo: desligada', () => pm.expect(pm.response.json().motivo).to.eql('desligada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Religar o Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ligada', () => pm.expect(pm.response.json().ligada).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Desligar o provedor EZVolt do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Provedor desligado, com autor', () => {",
+                  "  pm.expect(pm.response.json().ligado).to.eql(false);",
+                  "  pm.expect(pm.response.json().alterado_por).to.eql('Curador');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/3501",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": false,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Provedor desligado sai da entrega e os demais ficam",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Posto do EZVolt (9002) não é entregue', () => pm.expect(ids).to.not.include('ocm-9002'));",
+                  "pm.test('Posto de outro provedor (9001) continua', () => pm.expect(ids).to.include('ocm-9001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Religar o provedor EZVolt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ligado', () => pm.expect(pm.response.json().ligado).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/3501",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": true,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Desligar a fonte OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Desligada', () => pm.expect(pm.response.json().ligada).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Com o OCM desligado, a atualização não roda",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Atualização ignorada', () => pm.expect(pm.response.json().resultado).to.eql('ignorada'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('O OCM não foi consultado', () => pm.expect(depois.ocm - antes.ocm).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "OCM desligado: entrega sem postos do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Nenhum posto do OCM', () => pm.expect(itens.filter((i) => i.fonte.origem === 'open_charge_map')).to.eql([]));",
+                  "pm.test('Google continua', () => pm.expect(ids).to.include('google-dubleA'));",
+                  "pm.test('Sem o OCM, o lugar perto do 9001 deixa de ser duplicado e aparece', () => pm.expect(ids).to.include('google-dubleOcm'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Religar a fonte OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ligada', () => pm.expect(pm.response.json().ligada).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 · RF04 a RF06 · Google sob demanda",
+      "description": "Ficha na hora e nunca guardada, lugar que sumiu, Google fora do ar e expiração das coordenadas.",
+      "item": [
+        {
+          "name": "Ficha do lugar, buscada na hora",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, r) => pm.collectionVariables.set('coord_dubleA_antes', r.json().find((l) => l.place_id === 'dubleA').coordenada_obtida_em));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Entrega a ficha traduzida para o formato do REVOLT (RF05)', () => {",
+                  "  pm.expect(r.id).to.eql('google-dubleA');",
+                  "  pm.expect(r.nome).to.eql('Eletroposto Dublê A');",
+                  "  pm.expect(r.endereco).to.include('Rua do Dublê');",
+                  "  pm.expect(r.situacao).to.eql('operacional');",
+                  "  pm.expect(r.conectores).to.eql([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2, disponiveis: null }]);",
+                  "  pm.expect(r.pagamento).to.include('cartao_credito');",
+                  "});",
+                  "pm.test('Com origem e condições de uso do Google (RN05)', () => {",
+                  "  pm.expect(r.fonte.origem).to.eql('google');",
+                  "  pm.expect(r.fonte.condicoes_uso).to.include('mapa do Google');",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(r);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(r.eletropostos || r);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Uma consulta de ficha ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(1));",
+                  "  pm.test('Pediu ao Google só os campos da ficha (RF05)', () => pm.expect(mascaras.ficha).to.eql('id,displayName,formattedAddress,location,businessStatus,currentOpeningHours,evChargeOptions,paymentOptions,googleMapsUri'));",
+                  "});",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, t) => {",
+                  "  const dubleA = t.json().find((l) => l.place_id === 'dubleA');",
+                  "  pm.test('A ficha renovou a data da coordenada (UC03)', () => pm.expect(new Date(dubleA.coordenada_obtida_em) > new Date(pm.collectionVariables.get('coord_dubleA_antes'))).to.eql(true));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Nada da ficha foi guardado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Endereço da ficha não está em nenhuma tabela (RN08)', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=Rua do Dublê"
+          }
+        },
+        {
+          "name": "Ficha de lugar que nunca veio de uma busca",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/google-nunca-buscado"
+          }
+        },
+        {
+          "name": "Preparar lugar que o Google não tem mais",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"sumiu\",\n  \"lat\": -23.19,\n  \"lng\": -45.88,\n  \"dias\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ficha de lugar que não existe mais no Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Motivo: lugar inexistente no Google (UC03)', () => pm.expect(pm.response.json().motivo).to.eql('lugar_inexistente_no_google'));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, r) => {",
+                  "  pm.test('Identificador removido', () => pm.expect(r.json().map((l) => l.place_id)).to.not.include('sumiu'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/google-sumiu"
+          }
+        },
+        {
+          "name": "Dublê do Google fora do ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"fora_do_ar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Google fora do ar: a entrega não depende dele",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Pedido não falha e traz o OCM e os lugares do Google da base (§6.3)', () => pm.expect(ids).to.include.members(['ocm-9001', 'ocm-9002', 'google-dubleA']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=6"
+          }
+        },
+        {
+          "name": "Varredura com o Google fora do ar para e a célula fica pendente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Parou: Google fora do ar', () => {",
+                  "  pm.expect(r.parada).to.eql('fora_do_ar');",
+                  "  pm.expect(r.consultadas).to.eql(0);",
+                  "});",
+                  "pm.test('A célula continua pendente para a próxima rodada', () => pm.expect(r.pendentes).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Dublê do Google de volta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"ok\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Preparar célula vazia consultada há 89 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/celula-vazia",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat_min\": -3.6,\n  \"lng_min\": -60.6,\n  \"tam\": 0.6,\n  \"dias\": 89\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Atualização diária refaz só as células com lugares vencidas",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, r) => pm.collectionVariables.set('coord_massa01_antes', r.json().find((l) => l.place_id === 'massa01').coordenada_obtida_em));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('As 4 células com lugares, consultadas há 26 dias, foram refeitas; a vazia de 89 dias não', () => {",
+                  "  pm.expect(r.consultadas).to.eql(4);",
+                  "  pm.expect(r.parada).to.eql(null);",
+                  "  pm.expect(r.pendentes).to.eql(0);",
+                  "});",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, t) => {",
+                  "  const m = t.json().find((l) => l.place_id === 'massa01');",
+                  "  pm.test('A coordenada foi renovada antes dos 30 dias (RN07)', () => pm.expect(new Date(m.coordenada_obtida_em) > new Date(pm.collectionVariables.get('coord_massa01_antes'))).to.eql(true));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Preparar célula vazia consultada há 91 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/celula-vazia",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat_min\": -3.6,\n  \"lng_min\": -60.6,\n  \"tam\": 0.6,\n  \"dias\": 91\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Célula vazia é refeita depois de 90 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Só a célula vazia foi consultada', () => {",
+                  "  pm.expect(pm.response.json().consultadas).to.eql(1);",
+                  "  pm.expect(pm.response.json().lugares_recebidos).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Preparar lugar com coordenada de 31 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"velho31\",\n  \"lat\": -23.0204,\n  \"lng\": -45.554,\n  \"dias\": 31\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Preparar lugar com coordenada de 29 dias",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"velho29\",\n  \"lat\": -23.0205,\n  \"lng\": -45.5541,\n  \"dias\": 29\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Antes da expiração, a coordenada de 31 dias já não é entregue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Coordenada de 31 dias não entregue (RN07)', () => pm.expect(ids).to.not.include('google-velho31'));",
+                  "pm.test('Coordenada de 29 dias entregue (RN07)', () => pm.expect(ids).to.include('google-velho29'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.0204&lng=-45.554&raio_km=3"
+          }
+        },
+        {
+          "name": "Expirar coordenadas vencidas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Apagou a de 31 dias e manteve a de 29 (RF06)', () => {",
+                  "  pm.expect(pm.response.json().place_ids).to.include('velho31');",
+                  "  pm.expect(pm.response.json().place_ids).to.not.include('velho29');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/google/expirar"
+          }
+        },
+        {
+          "name": "Coordenada de 31 dias apagada, identificador mantido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const linhas = pm.response.json();",
+                  "const v31 = linhas.find((l) => l.place_id === 'velho31');",
+                  "const v29 = linhas.find((l) => l.place_id === 'velho29');",
+                  "pm.test('31 dias: identificador guardado, coordenada e data apagadas (RF06)', () => {",
+                  "  pm.expect(v31).to.be.an('object');",
+                  "  pm.expect(v31.local).to.eql(null);",
+                  "  pm.expect(v31.coordenada_obtida_em).to.eql(null);",
+                  "});",
+                  "pm.test('29 dias: coordenada mantida', () => pm.expect(v29.local).to.not.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/google_lugar"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 · RF07 e RF08 · Verificação própria e vínculo",
+      "description": "Verificações em campo com data e autor, recusas, histórico, posto novo, vínculo com o Google e exclusão de provedor preservando o registro próprio.",
+      "item": [
+        {
+          "name": "Verificação completa de um posto do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('posto_id', p.id);",
+                  "pm.test('Registro próprio ligado ao posto 9001 do OCM', () => pm.expect(p.ocm_id).to.eql(9001));",
+                  "pm.test('Verificação guardada com origem, licença, data e autor (RN01, RF07)', () => {",
+                  "  const v = p.verificacoes[0];",
+                  "  pm.expect(v.origem).to.eql('campo');",
+                  "  pm.expect(v.licenca).to.eql('Própria (REVOLT)');",
+                  "  pm.expect(v.data_observacao).to.eql('2026-11-10');",
+                  "  pm.expect(v.autor).to.eql('Curador');",
+                  "});",
+                  "pm.test('Todos os atributos do RF07 guardados', () => {",
+                  "  const v = p.verificacoes[0];",
+                  "  for (const campo of ['conectores', 'funcionamento', 'preco', 'regras_cobranca', 'taxa_ociosidade', 'pre_autorizacao', 'app_exigido', 'pagamento_sem_app', 'acesso', 'lat', 'lng']) {",
+                  "    pm.expect(v[campo], campo).to.not.eql(null);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-10\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"ocm_id\": 9001,\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"funcionamento\": \"funcionando\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"taxa_ociosidade\": \"R$ 1,00/min após 10 min de carga completa\",\n  \"pre_autorizacao\": \"R$ 50,00 no cartão\",\n  \"app_exigido\": \"App da rede\",\n  \"pagamento_sem_app\": false,\n  \"acesso\": \"publico\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Posto do OCM passa a ser entregue como verificado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "const ocm = itens.find((i) => i.id === 'ocm-9001');",
+                  "pm.test('Posto do OCM verificado, com a data da observação (RF07)', () => {",
+                  "  pm.expect(ocm.verificacao.situacao).to.eql('verificado');",
+                  "  pm.expect(ocm.verificacao.data).to.eql('2026-11-10');",
+                  "});",
+                  "pm.test('Dado da fonte não mudou', () => {",
+                  "  pm.expect(ocm.nome).to.eql('Posto dublê 9001');",
+                  "  pm.expect(ocm.fonte.origem).to.eql('open_charge_map');",
+                  "  pm.expect(ocm.fonte.licenca).to.eql('CC BY 4.0');",
+                  "});",
+                  "pm.test('A observação vem dentro do mesmo eletroposto, com origem própria', () => {",
+                  "  pm.expect(ocm.verificacao.origem).to.eql('verificacao_propria');",
+                  "  pm.expect(ocm.verificacao.licenca).to.eql('Própria (REVOLT)');",
+                  "  pm.expect(ocm.verificacao.preco).to.eql('R$ 2,10/kWh');",
+                  "  pm.expect(ocm.verificacao.conectores[0].tipo).to.eql('CCS2');",
+                  "});",
+                  "pm.test('Um item só: o registro próprio não aparece duplicado', () => pm.expect(itens.filter((i) => i.fonte.origem === 'verificacao_propria')).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Detalhe do eletroposto ocm-9001",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Mesmo formato da lista, com a verificação dentro', () => {",
+                  "  pm.expect(r.id).to.eql('ocm-9001');",
+                  "  pm.expect(r.fonte.origem).to.eql('open_charge_map');",
+                  "  pm.expect(r.verificacao.situacao).to.eql('verificado');",
+                  "  pm.expect(r.verificacao.preco).to.eql('R$ 2,10/kWh');",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(r);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(r.eletropostos || r);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/ocm-9001"
+          }
+        },
+        {
+          "name": "Detalhe de eletroposto inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos/ocm-999999"
+          }
+        },
+        {
+          "name": "Segunda verificação, mais recente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('As duas verificações ficam registradas (RN14)', () => pm.expect(pm.response.json().verificacoes.map((v) => v.data_observacao)).to.eql(['2026-11-11', '2026-11-10']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"posto_proprio_id\": {{posto_id}},\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-11\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,30/kWh\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Entrega usa a verificação mais recente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Data da última observação (RN14)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.data).to.eql('2026-11-11'));",
+                  "pm.test('Atributos da última observação', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.preco).to.eql('R$ 2,30/kWh'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Recusa: verificação sem data de observação",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Motivo cita a data', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('data_observacao'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9001,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"preco\": \"R$ 9,99/kWh\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recusa: verificação sem origem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Motivo cita a origem (RN01)', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('origem'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9001,\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recusa: verificação com origem Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Motivo cita a RN10', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('RN10'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"google\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"ocm_id\": 9001\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recusa: verificação com campo vindo do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Motivo cita o campo do Google (RN10)', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('evChargeOptions'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"ocm_id\": 9001,\n  \"evChargeOptions\": {\n    \"connectorCount\": 2\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recusa: tipo de conector fora do vocabulário do REVOLT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Motivo lista os tipos aceitos', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include('CCS2'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"ocm_id\": 9001,\n  \"conectores\": [\n    {\n      \"tipo\": \"Type 2 (Mennekes)\",\n      \"potencia_kw\": 22\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recusa: conector com origem Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.sendRequest(pm.variables.get('base_url') + '/postos-proprios/' + pm.collectionVariables.get('posto_id'), (e, r) => {",
+                  "  pm.test('Recusas não gravaram nada: continuam 2 verificações', () => pm.expect(r.json().verificacoes).to.have.length(2));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"ocm_id\": 9001,\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"origem\": \"google\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Posto novo, fora do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('posto_novo_id', pm.response.json().id);",
+                  "pm.test('Registro próprio sem vínculo com o OCM (UC04)', () => pm.expect(pm.response.json().ocm_id).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-11\",\n  \"localizacao\": {\n    \"lat\": -23.188,\n    \"lng\": -45.878\n  },\n  \"funcionamento\": \"funcionando\",\n  \"preco\": \"Grátis\",\n  \"acesso\": \"publico\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Vincular o lugar dubleB do Google ao posto novo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test('Registro próprio guarda o identificador do Google, com autor (RF08)', () => {",
+                  "  pm.expect(p.google_place_id).to.eql('dubleB');",
+                  "  pm.expect(p.vinculado_por).to.eql('Curador');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/postos-proprios/{{posto_novo_id}}/vinculo-google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"dubleB\",\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Depois do vínculo, dubleB vem só dentro do registro próprio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Lugar dubleB não é entregue como item do Google (RN12)', () => pm.expect(ids).to.not.include('google-dubleB'));",
+                  "pm.test('Lugar dubleA, sem vínculo, continua separado', () => pm.expect(ids).to.include('google-dubleA'));",
+                  "const proprio = itens.find((i) => i.id === 'propria-' + pm.collectionVariables.get('posto_novo_id'));",
+                  "pm.test('Registro próprio traz o eletroposto do Google vinculado', () => pm.expect(proprio.verificacao.lugar_google).to.eql('google-dubleB'));",
+                  "pm.test('Nenhum campo do Google copiado para o registro próprio (RN10)', () => {",
+                  "  const texto = JSON.stringify(proprio);",
+                  "  for (const campo of ['Eletroposto Dublê B', 'Rua do Dublê', 'displayName', 'formattedAddress', 'evChargeOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Desligar a fonte própria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Desligada', () => pm.expect(pm.response.json().ligada).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/propria",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Com o registro próprio fora da entrega, dubleB volta como lugar do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const resposta = pm.response.json();",
+                  "const itens = resposta.eletropostos;",
+                  "const ids = itens.map((i) => i.id);",
+                  "",
+                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
+                  "  for (const i of itens) {",
+                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
+                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
+                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
+                  "  }",
+                  "});",
+                  "",
+                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
+                  "  const texto = JSON.stringify(resposta);",
+                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "});",
+                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
+                  "  const lista = [].concat(resposta.eletropostos || resposta);",
+                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "});",
+                  "",
+                  "pm.test('Registro próprio não entregue', () => pm.expect(ids).to.not.include('propria-' + pm.collectionVariables.get('posto_novo_id')));",
+                  "pm.test('O lugar vinculado aparece, para o posto não sumir do mapa', () => pm.expect(ids).to.include('google-dubleB'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
+          "name": "Religar a fonte própria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ligada', () => pm.expect(pm.response.json().ligada).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/propria",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Vínculo com lugar que o Google nunca devolveu é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/postos-proprios/{{posto_novo_id}}/vinculo-google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"inventado\",\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Verificação do posto 9002 (EZVolt) desativado no local",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('posto_ezvolt_id', pm.response.json().id);",
+                  "pm.test('Situação registrada com a data (UC04)', () => pm.expect(pm.response.json().verificacoes[0].funcionamento).to.eql('desativado'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-11\",\n  \"localizacao\": {\n    \"lat\": -23.195,\n    \"lng\": -45.885\n  },\n  \"ocm_id\": 9002,\n  \"funcionamento\": \"desativado\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Excluir os dados do provedor EZVolt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Apagou os 2 postos do EZVolt e deixou o provedor desligado', () => {",
+                  "  pm.expect(pm.response.json().apagados).to.eql(2);",
+                  "  pm.expect(pm.response.json().ligado).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/3501/excluir-dados",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "A exclusão apagou só o EZVolt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const linhas = pm.response.json();",
+                  "pm.test('Nenhum registro do EZVolt na cópia (RF10)', () => pm.expect(linhas.filter((l) => l.provedor_id === 3501)).to.eql([]));",
+                  "pm.test('Registros de outro provedor continuam', () => pm.expect(linhas.map((l) => l.ocm_id)).to.include(9001));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/ocm_posto"
+          }
+        },
+        {
+          "name": "Registro próprio ligado ao EZVolt continua",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test('Registro próprio preservado, indicando que a fonte deixou de listar o posto (RF10, UC01)', () => {",
+                  "  pm.expect(p.ocm_id).to.eql(9002);",
+                  "  pm.expect(p.ocm_listado).to.eql(false);",
+                  "  pm.expect(p.verificacoes).to.have.length(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/postos-proprios/{{posto_ezvolt_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 · RF10 · Excluir a fonte Google",
+      "description": "Excluir os dados do Google apaga identificadores e coordenadas, mas mantém o vínculo guardado no registro próprio.",
+      "item": [
+        {
+          "name": "Excluir os dados do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Fonte desligada e dados apagados', () => {",
+                  "  pm.expect(pm.response.json().ligada).to.eql(false);",
+                  "  pm.expect(pm.response.json().apagados).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google/excluir-dados",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autor\": \"Curador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Nenhum lugar do Google guardado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Tabela vazia', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/google_lugar"
+          }
+        },
+        {
+          "name": "Células da varredura apagadas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Tabela vazia: um novo seed começa do zero', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/google_celula"
+          }
+        },
+        {
+          "name": "Registro próprio vinculado continua com o identificador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Vínculo preservado (UC06)', () => pm.expect(pm.response.json().google_place_id).to.eql('dubleB'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/postos-proprios/{{posto_novo_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}
