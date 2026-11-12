@@ -1,0 +1,33 @@
+{
+  "name": "revolt-api-poc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "POC da API agregadora de eletropostos do REVOLT (Open Charge Map, Google Places sob demanda e verificação própria)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && node --env-file=.env dist/main.js",
+    "start:teste": "tsc && node --env-file=.env.teste dist/main.js",
+    "apoio": "node --env-file=.env.teste teste/apoio.mjs",
+    "test": "bash scripts/testar.sh",
+    "test:app": "newman run postman/revolt-app.postman_collection.json -e postman/revolt-api-poc-local.postman_environment.json",
+    "postman:sync": "node --env-file=.env scripts/postman-sync.mjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "^12.5.0",
+    "@nestjs/core": "^12.5.0",
+    "@nestjs/platform-express": "^12.5.0",
+    "@nestjs/schedule": "^12.0.3",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "newman": "^6.2.3",
+    "typescript": "^7.0.2"
+  }
+}
