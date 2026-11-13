@@ -4,11 +4,6 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { Db } from './db.js';
 
-export const LICENCA_GOOGLE = 'Termos do Google Maps Platform';
-export const CONDICOES_GOOGLE =
-  'Exibir só em mapa do Google, com a atribuição do Google. Proibido ler por voz, usar em IA, repassar a terceiros ' +
-  'ou guardar algo além do identificador e, por até 30 dias, da coordenada.';
-
 // Tabela do Google de nov/2026, ainda não conferida na fatura (RF09).
 const PRECOS = {
   busca_area: { sku: 'Nearby Search Pro (id e coordenada)', gratis_mes: 5000, usd_por_mil: 32 },
