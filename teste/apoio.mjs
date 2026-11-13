@@ -46,6 +46,9 @@ const LUGARES = [
   { id: 'dubleB', lat: -23.187, lng: -45.875, nome: 'Eletroposto Dublê B', endereco: 'Rua do Dublê, 2 - São José dos Campos' },
   // A uns 40 m do posto 9001 do OCM: é o mesmo posto e não pode sair duplicado na lista.
   { id: 'dubleOcm', lat: -23.1902, lng: -45.8803, nome: 'Eletroposto Dublê do OCM', endereco: 'Rodovia Presidente Dutra - São José dos Campos' },
+  // Ao sul do posto 9002 do OCM (EZVolt), para o aceite da regra dos 100 m (RN17): a 80 m some e a 150 m aparece.
+  { id: 'perto80', lat: -23.195719, lng: -45.885, nome: 'Eletroposto Dublê a 80 m', endereco: 'Rua do Dublê, 80 - São José dos Campos' },
+  { id: 'longe150', lat: -23.19636, lng: -45.885, nome: 'Eletroposto Dublê a 150 m', endereco: 'Rua do Dublê, 150 - São José dos Campos' },
   // 24 lugares numa diagonal da região de teste: a primeira busca volta cheia (20) e a célula precisa ser dividida.
   ...Array.from({ length: 24 }, (_, k) => ({
     id: `massa${String(k + 1).padStart(2, '0')}`,

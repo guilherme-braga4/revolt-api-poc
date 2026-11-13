@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "REVOLT · API agregadora (POC)",
-    "description": "Testes da POC da API agregadora de eletropostos do REVOLT, contra os critérios de aceite do PRD \"Obtenção dos Dados dos Eletropostos\" (versão 0.2, não aprovada).\n\nRoda contra a API de teste (porta 3334) e o servidor de apoio (porta 4010), que faz o papel do Open Charge Map e do Google Places. Nenhum pedido chega aos serviços reais.\n\nRode a coleção inteira, na ordem: cada pasta depende do estado deixado pela anterior. O primeiro pedido zera o banco de teste.",
+    "description": "Testes da POC da API agregadora de eletropostos do REVOLT, contra os critérios de aceite do PRD \"Obtenção dos Dados dos Eletropostos\" (versão 0.5, não aprovada).\n\nRoda contra a API de teste (porta 3334) e o servidor de apoio (porta 4010), que faz o papel do Open Charge Map e do Google Places. Nenhum pedido chega aos serviços reais.\n\nRode a coleção inteira, na ordem: cada pasta depende do estado deixado pela anterior. O primeiro pedido zera o banco de teste.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "name": "2 · RF03 e RF04 · Varredura do Google e entrega por área",
+      "name": "2 · RF03, RF17 e RF18 · Varredura do Google e entrega por área",
       "description": "A varredura traz do Google só identificador e coordenada, célula por célula. O pedido de área lê só a base, sem consultar fonte externa.",
       "item": [
         {
@@ -323,11 +323,11 @@
                   "});",
                   "",
                   "pm.collectionVariables.set('ocm_ids_sjc', JSON.stringify(itens.filter((i) => i.fonte.origem === 'open_charge_map').map((i) => i.id).sort()));",
-                  "pm.test('Traz os postos do OCM e os lugares do Google da área', () => pm.expect(ids).to.have.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB']));",
-                  "pm.test('Lugar do Google a 40 m do posto 9001 é o mesmo posto e não sai duplicado', () => {",
-                  "  pm.expect(ids).to.not.include('google-dubleOcm');",
-                  "  pm.expect(resposta.fontes.google.duplicados_do_ocm).to.eql(1);",
-                  "});",
+                  "pm.test('Traz os postos do OCM e os lugares do Google da área', () => pm.expect(ids).to.have.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB', 'google-longe150']));",
+                  "pm.test('Lugar do Google a 40 m do posto 9001 é o mesmo posto e não sai separado (RN17)', () => pm.expect(ids).to.not.include('google-dubleOcm'));",
+                  "pm.test('Lugar do Google a 80 m do posto 9002 não sai separado (RF18)', () => pm.expect(ids).to.not.include('google-perto80'));",
+                  "pm.test('Lugar do Google a 150 m do posto 9002 é entregue (RF18)', () => pm.expect(ids).to.include('google-longe150'));",
+                  "pm.test('A resposta conta os 2 lugares escondidos', () => pm.expect(resposta.fontes.google.duplicados_do_ocm).to.eql(2));",
                   "pm.test('Posto do OCM verificado \"hoje\" na fonte é entregue como não verificado (RN13)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.situacao).to.eql('nao_verificado'));",
                   "pm.test('Lugar do Google traz as condições de uso do Google (RN05)', () => pm.expect(itens.find((i) => i.fonte.origem === 'google').fonte.condicoes_uso).to.include('mapa do Google'));",
                   "pm.test('Posto do OCM traz a atribuição ao provedor (RN05)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').fonte.condicoes_uso).to.include('Open Charge Map Contributors'));",
@@ -406,7 +406,7 @@
                   "",
                   "pm.test('Todos os postos do OCM da base', () => pm.expect(ids.filter((i) => i.startsWith('ocm-')).sort()).to.eql(['ocm-9001', 'ocm-9002', 'ocm-9006', 'ocm-9010']));",
                   "pm.test('Todos os lugares do Google, menos o duplicado do OCM', () => {",
-                  "  pm.expect(ids.filter((i) => i.startsWith('google-'))).to.have.length(26);",
+                  "  pm.expect(ids.filter((i) => i.startsWith('google-'))).to.have.length(27);",
                   "  pm.expect(ids).to.include('google-massa01');",
                   "});",
                   "",
@@ -454,9 +454,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "const linhas = pm.response.json();",
-                  "pm.test('Os 27 lugares da região guardados, uma vez cada', () => {",
-                  "  pm.expect(linhas).to.have.length(27);",
-                  "  pm.expect(linhas.map((l) => l.place_id)).to.include.members(['dubleA', 'dubleB', 'dubleOcm', 'massa01', 'massa24']);",
+                  "pm.test('Os 29 lugares da região guardados, uma vez cada', () => {",
+                  "  pm.expect(linhas).to.have.length(29);",
+                  "  pm.expect(linhas.map((l) => l.place_id)).to.include.members(['dubleA', 'dubleB', 'dubleOcm', 'perto80', 'longe150', 'massa01', 'massa24']);",
                   "});",
                   "pm.test('Cada lugar tem só place_id, coordenada e data (RN06)', () => {",
                   "  for (const l of linhas) pm.expect(Object.keys(l)).to.have.members(['place_id', 'local', 'coordenada_obtida_em']);",
@@ -1013,6 +1013,42 @@
           }
         },
         {
+          "name": "Com o teto atingido, a área continua entregando os lugares do Google",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().eletropostos.map((i) => i.id);",
+                  "pm.test('Os lugares do Google no prazo continuam na entrega (RN15)', () => pm.expect(ids).to.include.members(['google-dubleA', 'google-dubleB', 'google-longe150']));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+          }
+        },
+        {
           "name": "Curador volta o teto para US$ 50",
           "event": [
             {
@@ -1326,7 +1362,12 @@
                   "});",
                   "",
                   "pm.test('Posto do EZVolt (9002) não é entregue', () => pm.expect(ids).to.not.include('ocm-9002'));",
-                  "pm.test('Posto de outro provedor (9001) continua', () => pm.expect(ids).to.include('ocm-9001'));"
+                  "pm.test('Posto de outro provedor (9001) continua', () => pm.expect(ids).to.include('ocm-9001'));",
+                  "pm.test('Com o provedor do posto 9002 desligado, o lugar a 80 m volta (RF18)', () => pm.expect(ids).to.include('google-perto80'));",
+                  "pm.test('O lugar a 40 m do posto 9001, que segue entregue, continua escondido', () => {",
+                  "  pm.expect(ids).to.not.include('google-dubleOcm');",
+                  "  pm.expect(resposta.fontes.google.duplicados_do_ocm).to.eql(1);",
+                  "});"
                 ]
               }
             }
@@ -1521,7 +1562,7 @@
       ]
     },
     {
-      "name": "6 · RF04 a RF06 · Google sob demanda",
+      "name": "6 · RF05, RF06 e RF17 · Ficha, atualização diária e prazo da coordenada",
       "description": "Ficha na hora e nunca guardada, lugar que sumiu, Google fora do ar e expiração das coordenadas.",
       "item": [
         {
@@ -2719,7 +2760,7 @@
                   "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
                   "});",
                   "",
-                  "pm.test('Lugar dubleB não é entregue como item do Google (RN12)', () => pm.expect(ids).to.not.include('google-dubleB'));",
+                  "pm.test('Lugar dubleB não é entregue como item do Google (RN17)', () => pm.expect(ids).to.not.include('google-dubleB'));",
                   "pm.test('Lugar dubleA, sem vínculo, continua separado', () => pm.expect(ids).to.include('google-dubleA'));",
                   "const proprio = itens.find((i) => i.id === 'propria-' + pm.collectionVariables.get('posto_novo_id'));",
                   "pm.test('Registro próprio traz o eletroposto do Google vinculado', () => pm.expect(proprio.verificacao.lugar_google).to.eql('google-dubleB'));",

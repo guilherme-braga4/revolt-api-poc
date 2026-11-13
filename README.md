@@ -2,7 +2,7 @@
 
 Prova de conceito da API que obtém, guarda e entrega dados de eletropostos do Open Charge Map (OCM), do Google Places (só identificador e coordenada, por varredura) e da verificação própria em campo.
 
-- Fonte de verdade: PRD "Obtenção dos Dados dos Eletropostos", versão 0.2, **ainda não aprovado**. Esta POC não é a implementação aprovada das Alterações do §7.
+- Fonte de verdade: PRD "Obtenção dos Dados dos Eletropostos", versão 0.5, **ainda não aprovado**. Esta POC não é a implementação aprovada das Alterações do §7.
 - Os endpoints são provisórios: o contrato da API não está decidido (RF14).
 - NestJS 12, TypeScript 7, Postgres 17 com PostGIS, Node 24.
 
@@ -56,7 +56,7 @@ O App usa só dois endpoints. Os dois respondem no formato do domínio do REVOLT
 
 | Método e caminho | O que faz | RF |
 |---|---|---|
-| `GET /eletropostos?lat=&lng=&raio_km=` | Eletropostos da área, lidos só da base: cópia do OCM, registros próprios e lugares do Google trazidos pela varredura. Raio de até 3.000 km, o que cobre o Brasil inteiro. Não consulta nenhuma fonte externa. | RF03, RF04 |
+| `GET /eletropostos?lat=&lng=&raio_km=` | Eletropostos da área, lidos só da base: cópia do OCM, registros próprios e lugares do Google trazidos pela varredura. Raio de até 3.000 km, o que cobre o Brasil inteiro. Não consulta nenhuma fonte externa. | RF03, RF18 |
 | `GET /eletropostos/:id` | Detalhe de um eletroposto. Com `google-…`, a ficha vem do Google na hora, é traduzida e não é gravada. | RF05 |
 
 Cada eletroposto tem o mesmo formato, venha de onde vier:
@@ -138,7 +138,7 @@ curl -X POST localhost:3333/google/varredura -H 'Content-Type: application/json'
   - Célula com lugares é refeita a cada 25 dias, porque a coordenada só pode ficar guardada 30.
   - Célula vazia é refeita a cada 90 dias.
 - **Custo:** cada busca é uma Nearby Search Pro, a US$ 32 por mil, com 5.000 gratuitas por mês, e conta no teto de US$ 50. O seed do Brasil deve ficar entre 2.200 e 4.000 buscas, dependendo de quantas células voltarem cheias. Acompanhe em `GET /controle/gasto`.
-- **Termos do Google:** guardar o identificador sem prazo e a coordenada por até 30 dias é permitido. Varrer o país para pré-carregar esses dados não é autorizado pelos termos do Google Maps Platform ("pre-fetch, index", seção 3.2.3). O risco foi aceito pelo produto em 12/11/2026. A exibição continua obrigada a usar mapa do Google, com atribuição.
+- **Termos do Google:** guardar o identificador sem prazo e a coordenada por até 30 dias é permitido. Varrer o país para pré-carregar esses dados não é autorizado pelos termos do Google Maps Platform ("pre-fetch, index", seção 3.2.3). O Curador registrou o risco como aceito em 12/11/2026, na Gestão de Risco da Alteração 3 do PRD. A exibição continua obrigada a usar mapa do Google, com atribuição.
 
 ## Endpoints do Curador e da operação
 
@@ -148,7 +148,7 @@ Estes endpoints não são para o App.
 |---|---|---|
 | `POST /ocm/atualizar` | Importa o Brasil do OCM e troca a cópia de uma vez. Responde 502 se falhar. | RF01, RF02 |
 | `GET /ocm/atualizacoes` | Últimas atualizações, com contagens e motivo das falhas. | RF02 |
-| `POST /google/varredura` | Seed e atualização dos lugares do Google por células. Corpo opcional: `{ "limite": n }`. | RF04, RF06 |
+| `POST /google/varredura` | Seed e atualização dos lugares do Google por células. Corpo opcional: `{ "limite": n }`. | RF17, RF09 |
 | `POST /google/expirar` | Apaga coordenadas do Google com mais de 30 dias. Também roda todo dia às 4h. | RF06 |
 | `POST /verificacoes` | Registra uma verificação em campo: de um posto do OCM (`ocm_id`), de um registro próprio (`posto_proprio_id`) ou de um posto novo. | RF07 |
 | `GET /postos-proprios/:id` | Registro próprio com o histórico de verificações. | RF07 |
@@ -161,7 +161,7 @@ Exemplos de corpo estão na coleção do Postman.
 
 ## Testes
 
-A coleção do Postman cobre os critérios de aceite de RF01 a RF10, inclusive os casos negativos. Ela roda contra uma API de teste na porta 3334 e um servidor de apoio na porta 4010 (`teste/apoio.mjs`). O servidor de apoio faz o papel do OCM e do Google. **Nenhum teste chama o OCM ou o Google reais.**
+A coleção do Postman cobre os critérios de aceite de RF01 a RF10, RF17 e RF18 do PRD de obtenção 0.5, inclusive os casos negativos. Ela roda contra uma API de teste na porta 3334 e um servidor de apoio na porta 4010 (`teste/apoio.mjs`). O servidor de apoio faz o papel do OCM e do Google. **Nenhum teste chama o OCM ou o Google reais.**
 
 **Pelo Newman, de uma vez:**
 
@@ -184,8 +184,8 @@ O script sobe o banco, a API de teste e o apoio, roda a coleção e derruba tudo
 Escolhas de engenharia que o PRD deixa em aberto. Todas são provisórias.
 
 - **Área:** círculo com centro e raio de até 3.000 km, lido só da base.
-- **Google por varredura, não sob demanda:** diverge do PRD v0.2. A RF04 pede consulta sob demanda para a área pedida, e a RF15 marca a cópia periódica do Google como WON'T. O PRD precisa ser revisto para refletir esta decisão.
-- **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai na lista. A distância é provisória e pode juntar postos vizinhos de redes diferentes.
+- **Google por varredura:** é a regra do PRD de obtenção desde a versão 0.4 (RN21 e RF17). O pedido de área nunca consulta o Google, e só a ficha consulta na hora (RF05). O PRD deixa com a engenharia o tamanho das partes, o limite diário e o intervalo das partes vazias. Os números da POC são provisórios: células de 0,6° divididas até 0,01°, 500 consultas por dia, células com lugares refeitas a partir de 25 dias e células vazias a partir de 90 dias.
+- **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai separado (RN17 e RF18). Se o posto do OCM deixar de ser entregue, por exemplo com o provedor desligado, o lugar volta. Não há fusão de campos. A regra só olha a distância e pode juntar postos vizinhos de redes diferentes.
 - **Gasto:** cada chamada ao Google é contada por tipo, com a faixa gratuita e o preço da tabela de nov/2026: busca de área a US$ 32 por mil, com 5.000 gratuitas, e ficha a US$ 25 por mil, com 1.000 gratuitas. O Google não é chamado se o gasto do mês mais o custo da próxima consulta atingir o teto. Os preços precisam ser conferidos na primeira fatura.
 - **PlugShare:** é excluído todo registro do OCM que tenha "plugshare" em qualquer campo, sem diferenciar maiúsculas.
 - **Licença:** entram só os registros com `IsOpenDataLicensed` e licença CC0 ou CC BY 4.0. O OCM escreve a CC0 de dois jeitos, "CC0" e "CC-0", e os dois são aceitos.
@@ -196,7 +196,8 @@ Escolhas de engenharia que o PRD deixa em aberto. Todas são provisórias.
 
 ## Fora desta POC
 
-- Tudo o que o PRD marca como WON'T: devolução ao OCM (RF12), regras do app (RF13), contrato da API (RF14), cópia periódica do Google (RF15) e outras fontes (RF16).
+- Tudo o que o PRD marca como WON'T: devolução ao OCM (RF12), contrato da API (RF14), outras fontes (RF16) e regras do app (RF20).
+- Observação de motorista (RF19, Alteração 6) e lugares do Google ao longo de uma rota (RF21, Alteração 7). Os dois são MUST no PRD, mas ainda dependem do aval do Curador para entrar na POC.
 - Situação do corredor da Via Dutra (RF11, SHOULD).
-- Restringir os dados do Google ao REVOLT (RN11), porque depende de autenticação, que é parte do contrato da API.
+- Restringir os dados do Google ao REVOLT (RN18), porque depende de autenticação, que é parte do contrato da API.
 - Testes unitários e de integração automatizados fora do Postman, autenticação, histórico das mudanças de fontes e teto (guarda só a última, com data e autor) e aviso ativo ao Curador (as falhas e o teto aparecem nas consultas).
