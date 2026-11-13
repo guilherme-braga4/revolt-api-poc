@@ -1,9 +1,12 @@
-# REVOLT · API agregadora de eletropostos (POC)
+# REVOLT · API de eletropostos (POC e /v1)
 
-Prova de conceito da API que obtém, guarda e entrega dados de eletropostos do Open Charge Map (OCM), do Google Places (só identificador e coordenada, por varredura) e da verificação própria em campo.
+API que obtém, guarda e entrega dados de eletropostos do Open Charge Map (OCM), do Google Places (só identificador e coordenada, por varredura) e da verificação própria em campo. Desde a Fase 0 da arquitetura, entrega ao app do motorista pelo contrato `/v1`.
 
-- Fonte de verdade: PRD "Obtenção dos Dados dos Eletropostos", versão 0.2, **ainda não aprovado**. Esta POC não é a implementação aprovada das Alterações do §7.
-- Os endpoints são provisórios: o contrato da API não está decidido (RF14).
+- Fontes de verdade:
+  - PRD "Obtenção dos Dados dos Eletropostos", versão 0.5, aprovado em 12/11/2026;
+  - PRD "App do Motorista", versão 0.2, aprovado em 12/11/2026;
+  - Arquitetura TO-BE do app do motorista, versão 0.3: decisões D-02 (evoluir esta POC), D-03 (pinos por janela), D-04 (login gerenciado) e D-09 (atestado do app e trava contra robô).
+- Esta base ainda é a POC evoluída: a obtenção (OCM, varredura, verificação) não foi reescrita como a implementação final das Alterações do PRD de obtenção.
 - NestJS 12, TypeScript 7, Postgres 17 com PostGIS, Node 24.
 
 ## Subir
@@ -49,79 +52,115 @@ ORDER BY origem, nome;
 - A view não aplica as chaves de fonte e de provedor. A API aplica, e por isso a contagem do App pode ficar um pouco abaixo da view.
 - As colunas `local` são `geography`. Para ver a coordenada, use `ST_AsText(local)`. A view também traz `lat` e `lng`.
 - As tabelas cruas continuam disponíveis para conferência: `ocm_posto`, `posto_proprio`, `verificacao` etc.
+- A tabela `corredor_verificado` guarda as áreas que o Curador já percorreu. Hoje tem só a Via Dutra: os 85 pontos do Discovery com folga de 3 km. O mapa avisa quando a janela está fora dela.
 
-## O que o App chama
+## O que o app chama: contrato /v1
 
-O App usa só dois endpoints. Os dois respondem no formato do domínio do REVOLT, e nenhum nome de campo do OCM ou do Google chega ao App.
+O app usa só os caminhos sob `/v1`, em JSON e no vocabulário do REVOLT. Nenhum campo do OCM ou do Google chega ao app com o nome da fonte. O formato exato está na especificação OpenAPI gerada pela própria API:
 
-| Método e caminho | O que faz | RF |
+- versionada em `openapi/v1.json`, regenerada com `npm run openapi` (o `npm test` reprova se ela estiver diferente do que a API serve);
+- servida em `GET /v1/openapi.json`, com a página navegável em `/v1/docs`.
+
+| Método e caminho | O que faz | Autenticação |
 |---|---|---|
-| `GET /eletropostos?lat=&lng=&raio_km=` | Eletropostos da área, lidos só da base: cópia do OCM, registros próprios e lugares do Google trazidos pela varredura. Raio de até 3.000 km, o que cobre o Brasil inteiro. Não consulta nenhuma fonte externa. | RF03, RF04 |
-| `GET /eletropostos/:id` | Detalhe de um eletroposto. Com `google-…`, a ficha vem do Google na hora, é traduzida e não é gravada. | RF05 |
+| `GET /v1/mapa?bbox=&zoom=` e filtros | Pinos e grupos da janela do mapa, lidos só da base. Nunca consulta fonte externa. | Atestado do app para receber lugares do Google |
+| `GET /v1/eletropostos/:id` | Ficha de um posto. Com `google-…`, a ficha vem do Google na hora, é traduzida e não é gravada. | Atestado do app para a ficha do Google |
+| `GET /v1/conta` | Confere o token da conta e devolve o identificador. Base das rotas com conta das fases 2 e 3. | Conta |
 
-Cada eletroposto tem o mesmo formato, venha de onde vier:
+**Mapa (`GET /v1/mapa`)**
+
+- `bbox=oeste,sul,leste,norte` em graus e `zoom` de 0 a 22. A janela pode ter até 8 blocos de 256 px de lado no zoom pedido; acima disso, 400. O que passar dos limites do mundo é recortado.
+- Filtros: `conectores=CCS2,TIPO_2`, `potencia_min=50` (kW), `rapida=true` (CCS2, CCS1 ou CHAdeMO), `publico=true` e `gratuito=true`. Posto sem o dado que o filtro pede fica oculto e entra na contagem daquele filtro.
+- A partir do zoom 13, os postos vêm um a um, e os lugares do Google entram só sem filtro e com atestado válido. Abaixo do zoom 13, o servidor junta os postos do OCM e próprios numa grade de 4×4 células por bloco: célula com um posto vira pino, com mais vira grupo com `quantidade` e `bbox`. Lugar do Google nunca entra em grupo nem em contagem.
+- `ocultos`: `total` e `por_motivo` contam os postos do OCM e próprios escondidos pelos filtros (um posto escondido por dois filtros conta nos dois). `sem_contagem` avisa, sem número, que há lugares do Google escondidos pelo filtro ou pelo zoom.
+- `mapa_vazio`, quando não há pino nem grupo: `filtro_ativo`, `zoom_insuficiente`, `fonte_indisponivel`, `fora_do_corredor` ou `nenhum_posto_conhecido`, nessa ordem de precedência.
+- `corredor_verificado` diz se a janela toca a área já percorrida. `fontes` diz se cada fonte está `ligada`, `desligada` ou `nao_autorizada` (Google sem atestado).
+
+Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 
 ```json
 {
   "id": "ocm-9001",
-  "nome": "Posto exemplo",
-  "endereco": "Rua Exemplo, 100, São José dos Campos",
   "localizacao": { "lat": -23.19, "lng": -45.88 },
+  "nome": "Posto exemplo",
   "situacao": "operacional",
-  "conectores": [{ "tipo": "CCS2", "potencia_kw": 60, "quantidade": 2, "disponiveis": null }],
-  "preco": null,
-  "horario": null,
-  "pagamento": null,
-  "fonte": { "origem": "open_charge_map", "provedor": "Open Charge Map Contributors", "licenca": "CC BY 4.0", "condicoes_uso": "…", "data": "2026-11-12T06:00:00Z" },
-  "verificacao": {
-    "situacao": "verificado",
-    "origem": "verificacao_propria",
-    "licenca": "Própria (REVOLT)",
-    "data": "2026-11-10",
-    "autor": "Curador",
-    "funcionamento": "funcionando",
-    "conectores": [{ "tipo": "CCS2", "potencia_kw": 60, "quantidade": 2, "disponiveis": null }],
-    "preco": "R$ 2,10/kWh",
-    "lugar_google": null
+  "conectores": ["CCS2"],
+  "potencia_max_kw": 60,
+  "origem": "open_charge_map",
+  "verificacao": { "situacao": "verificado", "data": "2026-11-10" },
+  "atualizado_em": "2026-11-10",
+  "condicoes_de_uso": {
+    "licenca": "CC BY 4.0",
+    "atribuicao": "Open Charge Map Contributors via Open Charge Map",
+    "exibicao": "livre",
+    "pode_ler_em_voz": true,
+    "pode_usar_em_ia": true,
+    "texto": "…"
   }
 }
 ```
 
-O exemplo omite alguns campos de `verificacao`: `condicoes_uso`, `regras_cobranca`, `taxa_ociosidade`, `pre_autorizacao`, `app_exigido`, `pagamento_sem_app` e `acesso`.
+- O lugar do Google no mapa traz só `id`, `localizacao` e os quatro campos; `nome`, `conectores` e `potencia_max_kw` vêm nulos. As condições dele dizem `exibicao: somente_sobre_mapa_google`, sem voz e sem IA, com atribuição "Google Maps".
+- Datas de item são dias (`AAAA-MM-DD`, horário de Brasília). A disponibilidade do Google traz `informada_em` com a hora.
 
-- **`id`:** `ocm-<id do OCM>`, `propria-<id do registro próprio>` ou `google-<place_id>`.
-- **`fonte`:** de onde vem o dado do eletroposto, com licença, condições de uso e data. A `origem` é `open_charge_map`, `verificacao_propria` ou `google`.
-- **`verificacao`:** só a observação em campo torna o eletroposto verificado. Ela vem neste bloco, com a sua própria origem e licença, e não mistura com o dado da fonte. Sem observação, o bloco é `{ "situacao": "nao_verificado" }`.
-- **Um item por eletroposto:** o posto do OCM verificado em campo é um item só. O registro próprio vira item à parte (`propria-…`) só quando não há posto do OCM ligado a ele na cópia, por ser um posto novo ou por ter saído da fonte.
-- **Google na lista:** o item traz só `id`, `localizacao` e `fonte`. Nome, endereço, conectores, horário e pagamento vêm no detalhe, porque não podem ser guardados. Um lugar do Google a menos de 100 m de um posto do OCM entregue é tratado como o mesmo posto e não aparece.
-- **`situacao`:** `operacional`, `fora_de_operacao`, `planejado`, `fechado_definitivamente` ou `desconhecida`.
-- **`conectores[].tipo`:** `CCS2`, `CCS1`, `TIPO_2`, `TIPO_1`, `CHADEMO`, `GBT`, `TESLA`, `TOMADA`, `OUTRO` ou `DESCONHECIDO`. A verificação em campo só aceita estes valores.
-- **`pagamento`** (só no detalhe do Google): `cartao_credito`, `cartao_debito`, `nfc` e `somente_dinheiro`.
+**Ficha (`GET /v1/eletropostos/:id`)**
 
-A resposta da área também traz `fontes`, com o que cada fonte entregou. Para o Google, `duplicados_do_ocm` conta os lugares escondidos por estarem colados a um posto do OCM.
+- `id` é `ocm-<id do OCM>`, `propria-<id do registro próprio>` ou `google-<place_id>`.
+- Cada atributo vem como `{ "valor", "origem", "data" }`. `valor: null` quer dizer "não informado". A verificação em campo vigente vence o dado da fonte, atributo por atributo.
+- `lugar_vinculado` aponta o lugar do Google que o Curador confirmou ser o mesmo posto. `link_externo` abre o lugar no Google Maps, sem consulta paga, e só existe na ficha do Google.
+- Ficha do Google sem atestado: 401. Muitas fichas seguidas no mesmo aparelho: 429. Teto atingido, Google desligado ou fora do ar: 503. Nos dois últimos casos a resposta traz `link_externo`, para o app oferecer o Google Maps.
 
-### Testar a API do App
+Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
-A coleção **"REVOLT · App (POC)"** tem os dois endpoints, com exemplos de resposta salvos, e roda contra a API local com a base real.
+### Autenticação (D-04 e D-09)
+
+A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a chave publicada, o emissor e o público.
+
+- **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir.
+- **Atestado do app** (`X-Atestado-App: <token>`): prova que o pedido vem do app do REVOLT. Sem ele, o mapa não traz lugares do Google e a ficha do Google é recusada (RN18 da obtenção).
+- **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google a cada 10 minutos. Não é limite por pessoa.
+
+| Variável | Produção (Firebase), a conferir na Fase 1 |
+|---|---|
+| `CONTA_JWKS_URL` | `https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com` |
+| `CONTA_EMISSOR` | `https://securetoken.google.com/<id do projeto>` |
+| `CONTA_PUBLICO` | `<id do projeto>` |
+| `ATESTADO_JWKS_URL` | `https://firebaseappcheck.googleapis.com/v1/jwks` |
+| `ATESTADO_EMISSOR` | `https://firebaseappcheck.googleapis.com/<número do projeto>` |
+| `ATESTADO_PUBLICO` | `projects/<número do projeto>` |
+| `LIMITE_FICHAS_GOOGLE` | `60` |
+
+Com `ATESTADO_JWKS_URL` vazio, o atestado fica desligado e a API avisa no log. Serve só para desenvolvimento local. Com `CONTA_JWKS_URL` vazio, nenhuma conta é aceita.
+
+### Testar a API do app
+
+A coleção **"REVOLT · App (POC)"** roda contra a API local com a base real: especificação, mapa no zoom alto, mapa do Brasil no zoom 4, mapa com filtro e a ficha de um posto do OCM.
 
 1. Suba a API com `npm start`.
 2. No Postman, escolha o environment **"REVOLT API POC · local (base real)"**, que aponta para `http://localhost:3333`.
 3. Rode os pedidos da coleção. Pelo terminal, rode `npm run test:app`.
 
-- **Testes:** conferem o formato do REVOLT, não os valores, porque a base real muda a cada atualização do OCM.
-- **Somente leitura:** a coleção não apaga nem altera nada.
-- **Custo:** pedir áreas não custa nada, de qualquer tamanho. Só o detalhe de um `google-…` consulta o Google: é uma ficha paga, com 1.000 gratuitas por mês, dentro do teto de US$ 50.
-- **Atenção:** não rode a coleção de testes "REVOLT · API agregadora (POC)" no environment local. Ela apaga dados e desligaria fontes na base real.
+- **Testes:** toda resposta passa pela mesma conferência de contrato da coleção de testes. Os testes conferem o formato, não os valores, porque a base real muda a cada atualização do OCM.
+- **Somente leitura e sem custo:** a coleção não apaga nem altera nada e não abre ficha do Google, a única consulta paga (1.000 gratuitas por mês, dentro do teto de US$ 50).
+- **Atenção:** não rode a coleção de testes "REVOLT · API (obtenção e /v1)" no environment local. Ela apaga dados e desligaria fontes na base real.
+
+### Medir o mapa
+
+```bash
+node --env-file=.env scripts/medir-mapa.mjs http://localhost:3333 30
+```
+
+Pede janelas em volta de postos reais nos zooms 4 a 16, no tamanho de um celular e no máximo permitido, com gzip, e mostra o tempo (p50, p95, máximo) e o tamanho comprimido. Medição de 12/11/2026 numa cópia da base real (2.416 postos do OCM e 10.019 lugares do Google), com 30 janelas por caso: p95 de até 59 ms e no máximo 37 KB comprimidos, contra o limite de 1 s e 150 KB da RNF-04. A visão do Brasil no zoom 4 caiu de 6,5 MB em 1,5 s para 4,7 KB em 58 ms.
 
 ## Importar o OCM e pedir uma área
 
 ```bash
 curl -X POST localhost:3333/ocm/atualizar
-curl "localhost:3333/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
-curl localhost:3333/eletropostos/ocm-481262
+curl "localhost:3333/v1/mapa?bbox=-45.93,-23.24,-45.83,-23.14&zoom=14"
+curl localhost:3333/v1/eletropostos/ocm-481262
 ```
 
-A primeira linha importa o Brasil inteiro do acesso ao vivo do OCM. A segunda pede os eletropostos num raio de 5 km em São José dos Campos, na Via Dutra. A terceira abre um deles.
+A primeira linha importa o Brasil inteiro do acesso ao vivo do OCM. A segunda pede o mapa de São José dos Campos, na Via Dutra. A terceira abre a ficha de um posto.
 
 - A atualização do OCM roda sozinha todo dia às 3h. O `POST /ocm/atualizar` é o disparo manual.
 - O pedido de área nunca consulta o Google. Os lugares do Google entram na base pela varredura, descrita abaixo.
@@ -142,7 +181,7 @@ curl -X POST localhost:3333/google/varredura -H 'Content-Type: application/json'
 
 ## Endpoints do Curador e da operação
 
-Estes endpoints não são para o App.
+Estes endpoints não são para o app. **Eles ainda não têm autenticação:** antes de publicar a API, precisam ficar atrás da conta com papel de Curador (Fase 3) ou fora da internet.
 
 | Método e caminho | O que faz | RF |
 |---|---|---|
@@ -161,7 +200,9 @@ Exemplos de corpo estão na coleção do Postman.
 
 ## Testes
 
-A coleção do Postman cobre os critérios de aceite de RF01 a RF10, inclusive os casos negativos. Ela roda contra uma API de teste na porta 3334 e um servidor de apoio na porta 4010 (`teste/apoio.mjs`). O servidor de apoio faz o papel do OCM e do Google. **Nenhum teste chama o OCM ou o Google reais.**
+A coleção do Postman cobre os critérios de aceite do PRD de obtenção (RF01 a RF10 e a regra dos 100 m do RF18), inclusive os casos negativos, e o contrato `/v1`: filtros e contagem de ocultos, grupos, motivos de mapa vazio, atestado, trava contra robô e conta. Ela roda contra uma API de teste na porta 3334 e um servidor de apoio na porta 4010 (`teste/apoio.mjs`). O servidor de apoio faz o papel do OCM, do Google, do login gerenciado e do atestado do app. **Nenhum teste chama o OCM ou o Google reais.**
+
+Toda resposta da `/v1` passa por um script da coleção que a compara com a especificação OpenAPI servida pela API: campo a mais, campo a menos ou tipo errado reprova. Todo pino e toda ficha também precisam trazer `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso` (RNF-01).
 
 **Pelo Newman, de uma vez:**
 
@@ -169,7 +210,7 @@ A coleção do Postman cobre os critérios de aceite de RF01 a RF10, inclusive o
 npm test
 ```
 
-O script sobe o banco, a API de teste e o apoio, roda a coleção e derruba tudo.
+O script sobe o banco (se ainda não estiver no ar), a API de teste e o apoio, confere que `openapi/v1.json` é o que a API serve, roda a coleção e derruba tudo. Variáveis já definidas no ambiente valem mais que o `.env.teste`: dá para rodar contra outro banco `*_teste` e em outras portas, passando também `--env-var base_url=… --env-var apoio_url=…` para o Newman.
 
 **Pelo Postman:**
 
@@ -179,24 +220,30 @@ O script sobe o banco, a API de teste e o apoio, roda a coleção e derruba tudo
    - com `npm run postman:sync`, que envia para a sua conta todas as coleções e todos os environments da pasta (precisa de `POSTMAN_API_KEY` no `.env`).
 3. Escolha o environment "REVOLT API POC · teste (dublês)" e rode a coleção inteira no Runner, na ordem. O primeiro pedido zera o banco `revolt_teste`.
 
-## Decisões da POC
+## Decisões
 
-Escolhas de engenharia que o PRD deixa em aberto. Todas são provisórias.
+Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 
-- **Área:** círculo com centro e raio de até 3.000 km, lido só da base.
-- **Google por varredura, não sob demanda:** diverge do PRD v0.2. A RF04 pede consulta sob demanda para a área pedida, e a RF15 marca a cópia periódica do Google como WON'T. O PRD precisa ser revisto para refletir esta decisão.
-- **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai na lista. A distância é provisória e pode juntar postos vizinhos de redes diferentes.
+- **Contrato `/v1` (Fase 0):** substitui o `GET /eletropostos` e o `GET /eletropostos/:id` da POC, que foram removidos. A ficha antiga do Google não passava pelo atestado.
+- **Janela do mapa:** retângulo (`bbox`) com zoom, até 8 blocos de 256 px de lado. A partir do zoom 13 (`ZOOM_ALTO`), tudo vem um a um. Abaixo dele, grade de 4×4 células por bloco, ancorada em 0,0, para a mesma área cair sempre na mesma célula.
+- **Google por varredura:** previsto no PRD de obtenção a partir da versão 0.5 (Alteração 3).
+- **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai no mapa (RN17). Com o provedor ou a fonte desse posto desligados, o lugar volta. A distância é provisória e pode juntar postos vizinhos de redes diferentes.
+- **Filtro de gratuito:** heurística sobre o texto do preço ("grátis", "gratuito", "free", "sem custo", "0" ou "R$ 0"), a revisar com dados reais. Preço não informado é oculto e contado.
+- **Acesso:** do OCM vem do tipo de uso ("Public…" é público, "Priv…" é restrito); a verificação em campo vence. O tipo da restrição ainda não é registrado.
 - **Gasto:** cada chamada ao Google é contada por tipo, com a faixa gratuita e o preço da tabela de nov/2026: busca de área a US$ 32 por mil, com 5.000 gratuitas, e ficha a US$ 25 por mil, com 1.000 gratuitas. O Google não é chamado se o gasto do mês mais o custo da próxima consulta atingir o teto. Os preços precisam ser conferidos na primeira fatura.
 - **PlugShare:** é excluído todo registro do OCM que tenha "plugshare" em qualquer campo, sem diferenciar maiúsculas.
 - **Licença:** entram só os registros com `IsOpenDataLicensed` e licença CC0 ou CC BY 4.0. O OCM escreve a CC0 de dois jeitos, "CC0" e "CC-0", e os dois são aceitos.
 - **Verificação:** exige `origem: "campo"`, autor, data e localização. Qualquer campo fora da lista do RF07 é recusado, e isso inclui os campos do Google.
-- **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação e tipo de conector, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
-- **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do App junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
+- **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação, tipo de conector e acesso, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
+- **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do app junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
 - **Excluir dados:** também desliga a fonte ou o provedor, para que os dados não voltem na próxima atualização.
 
-## Fora desta POC
+## Fora desta fase
 
-- Tudo o que o PRD marca como WON'T: devolução ao OCM (RF12), regras do app (RF13), contrato da API (RF14), cópia periódica do Google (RF15) e outras fontes (RF16).
-- Situação do corredor da Via Dutra (RF11, SHOULD).
-- Restringir os dados do Google ao REVOLT (RN11), porque depende de autenticação, que é parte do contrato da API.
-- Testes unitários e de integração automatizados fora do Postman, autenticação, histórico das mudanças de fontes e teto (guarda só a última, com data e autor) e aviso ativo ao Curador (as falhas e o teto aparecem nas consultas).
+- Planejador de rota (Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
+- Autenticação das rotas do Curador e da operação: depende do papel de Curador (Fase 3). Bloqueia a publicação.
+- Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
+- Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).
+- Separação do banco em esquemas de obtenção e de app: as tabelas continuam no `public`.
+- A trava contra robô guarda a contagem na memória e usa o IP quando falta `X-Aparelho`. Atrás de um proxy, a API precisa confiar no cabeçalho do proxy para ver o IP real.
+- Os WON'T do PRD de obtenção: devolução ao OCM (RF12), regras do app (RF13), cópia periódica do Google (RF15) e outras fontes (RF16).

@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "REVOLT · API agregadora (POC)",
-    "description": "Testes da POC da API agregadora de eletropostos do REVOLT, contra os critérios de aceite do PRD \"Obtenção dos Dados dos Eletropostos\" (versão 0.2, não aprovada).\n\nRoda contra a API de teste (porta 3334) e o servidor de apoio (porta 4010), que faz o papel do Open Charge Map e do Google Places. Nenhum pedido chega aos serviços reais.\n\nRode a coleção inteira, na ordem: cada pasta depende do estado deixado pela anterior. O primeiro pedido zera o banco de teste.",
+    "name": "REVOLT · API (obtenção e /v1)",
+    "description": "Testes da API do REVOLT contra os critérios de aceite do PRD \"Obtenção dos Dados dos Eletropostos\" (versão 0.5, aprovada) e do contrato /v1 do app do motorista (Fase 0 da arquitetura).\n\nRoda contra a API de teste (porta 3334) e o servidor de apoio (porta 4010), que faz o papel do Open Charge Map, do Google Places, do login gerenciado e do atestado do app. Nenhum pedido chega aos serviços reais.\n\nToda resposta da /v1 passa pela conferência de contrato do script da coleção: ela é comparada com a especificação OpenAPI gerada pela API (campo a mais ou a menos reprova) e todo item precisa trazer origem, verificacao, atualizado_em e condicoes_de_uso.\n\nRode a coleção inteira, na ordem: cada pasta depende do estado deixado pela anterior. O primeiro pedido zera o banco de teste.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -32,6 +32,34 @@
     {
       "key": "coord_massa01_antes",
       "value": ""
+    },
+    {
+      "key": "openapi",
+      "value": ""
+    },
+    {
+      "key": "atestado",
+      "value": ""
+    },
+    {
+      "key": "token_teste",
+      "value": ""
+    },
+    {
+      "key": "p_tipo2_gratis",
+      "value": ""
+    },
+    {
+      "key": "p_ccs2_restrito",
+      "value": ""
+    },
+    {
+      "key": "p_chademo",
+      "value": ""
+    },
+    {
+      "key": "p_desconhecido",
+      "value": ""
     }
   ],
   "item": [
@@ -48,7 +76,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.eql('revolt_teste'));"
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));",
+                  "pm.collectionVariables.unset('atestado'); // as chaves do apoio mudam a cada vez que ele sobe"
                 ]
               }
             }
@@ -57,6 +86,36 @@
             "method": "POST",
             "header": [],
             "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Contrato: especificação OpenAPI gerada pela API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const doc = pm.response.json();",
+                  "pm.test('OpenAPI 3 com as rotas da Fase 0', () => {",
+                  "  pm.expect(doc.openapi).to.match(/^3\\./);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/mapa', '/v1/eletropostos/{id}', '/v1/conta']);",
+                  "});",
+                  "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
+                  "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
+                  "});",
+                  "pm.test('Nenhuma rota da POC no contrato do app', () => pm.expect(Object.keys(doc.paths).every((p) => p.startsWith('/v1/'))).to.eql(true));",
+                  "// Guardada para a conferência de contrato que roda em toda resposta da /v1 (script da coleção).",
+                  "pm.collectionVariables.set('openapi', JSON.stringify(doc));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/openapi.json"
           }
         }
       ]
@@ -281,7 +340,7 @@
           }
         },
         {
-          "name": "Pedido da área lê só a base",
+          "name": "Pedido do mapa lê só a base",
           "event": [
             {
               "listen": "prerequest",
@@ -299,51 +358,38 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
+                  "pm.collectionVariables.set('ocm_ids_sjc', JSON.stringify(r.pinos.filter((p) => p.origem === 'open_charge_map').map((p) => p.id).sort()));",
+                  "pm.test('Traz os postos do OCM e os lugares do Google da janela', () => pm.expect(ids).to.have.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB']));",
+                  "pm.test('Zoom alto: tudo um a um, sem grupos', () => pm.expect(r.grupos).to.eql([]));",
+                  "pm.test('Lugar do Google a 40 m do posto 9001 é o mesmo posto e não sai duplicado (RN17)', () => pm.expect(ids).to.not.include('google-dubleOcm'));",
+                  "pm.test('Posto do OCM verificado \"hoje\" na fonte é entregue como não verificado (RN13)', () => pm.expect(pino('ocm-9001').verificacao).to.eql({ situacao: 'nao_verificado', data: null }));",
+                  "pm.test('Lugar do Google traz as condições de uso do Google (RN05)', () => {",
+                  "  const c = pino('google-dubleA').condicoes_de_uso;",
+                  "  pm.expect(c.exibicao).to.eql('somente_sobre_mapa_google');",
+                  "  pm.expect(c.pode_ler_em_voz).to.eql(false);",
+                  "  pm.expect(c.pode_usar_em_ia).to.eql(false);",
+                  "  pm.expect(c.texto).to.include('mapa do Google');",
                   "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.collectionVariables.set('ocm_ids_sjc', JSON.stringify(itens.filter((i) => i.fonte.origem === 'open_charge_map').map((i) => i.id).sort()));",
-                  "pm.test('Traz os postos do OCM e os lugares do Google da área', () => pm.expect(ids).to.have.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB']));",
-                  "pm.test('Lugar do Google a 40 m do posto 9001 é o mesmo posto e não sai duplicado', () => {",
-                  "  pm.expect(ids).to.not.include('google-dubleOcm');",
-                  "  pm.expect(resposta.fontes.google.duplicados_do_ocm).to.eql(1);",
-                  "});",
-                  "pm.test('Posto do OCM verificado \"hoje\" na fonte é entregue como não verificado (RN13)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.situacao).to.eql('nao_verificado'));",
-                  "pm.test('Lugar do Google traz as condições de uso do Google (RN05)', () => pm.expect(itens.find((i) => i.fonte.origem === 'google').fonte.condicoes_uso).to.include('mapa do Google'));",
-                  "pm.test('Posto do OCM traz a atribuição ao provedor (RN05)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').fonte.condicoes_uso).to.include('Open Charge Map Contributors'));",
+                  "pm.test('Posto do OCM traz a atribuição ao provedor (RN05)', () => pm.expect(pino('ocm-9001').condicoes_de_uso.atribuicao).to.include('Open Charge Map Contributors'));",
                   "pm.test('Posto do OCM no formato do REVOLT: nome, situação e conector traduzidos', () => {",
-                  "  const e = itens.find((i) => i.id === 'ocm-9001');",
+                  "  const e = pino('ocm-9001');",
                   "  pm.expect(e.nome).to.eql('Posto dublê 9001');",
                   "  pm.expect(e.situacao).to.eql('operacional');",
-                  "  pm.expect(e.conectores).to.eql([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2, disponiveis: null }]);",
-                  "  pm.expect(itens.find((i) => i.id === 'ocm-9002').situacao).to.eql('fora_de_operacao');",
+                  "  pm.expect(e.conectores).to.eql(['CCS2']);",
+                  "  pm.expect(e.potencia_max_kw).to.eql(60);",
+                  "  pm.expect(pino('ocm-9002').situacao).to.eql('fora_de_operacao');",
                   "});",
-                  "pm.test('Lugar do Google na lista traz só identificador e localização', () => {",
-                  "  const g = itens.find((i) => i.id === 'google-dubleA');",
+                  "pm.test('Lugar do Google no mapa traz só identificador e localização', () => {",
+                  "  const g = pino('google-dubleA');",
                   "  pm.expect(g.nome).to.eql(null);",
                   "  pm.expect(g.conectores).to.eql(null);",
                   "  pm.expect(g.localizacao.lat).to.be.a('number');",
                   "});",
+                  "pm.test('Janela dentro do corredor da Dutra', () => pm.expect(r.corredor_verificado).to.eql(true));",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
@@ -359,11 +405,11 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
-          "name": "Visão do país: raio de 3.000 km",
+          "name": "Visão do país: zoom 4, postos agrupados",
           "event": [
             {
               "listen": "prerequest",
@@ -381,40 +427,26 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Todos os postos do OCM da base', () => pm.expect(ids.filter((i) => i.startsWith('ocm-')).sort()).to.eql(['ocm-9001', 'ocm-9002', 'ocm-9006', 'ocm-9010']));",
-                  "pm.test('Todos os lugares do Google, menos o duplicado do OCM', () => {",
-                  "  pm.expect(ids.filter((i) => i.startsWith('google-'))).to.have.length(26);",
-                  "  pm.expect(ids).to.include('google-massa01');",
+                  "const contados = r.grupos.reduce((s, g) => s + g.quantidade, 0) + r.pinos.length;",
+                  "pm.test('Grupos e pinos somam os 4 postos do OCM da base (D-03)', () => pm.expect(contados).to.eql(4));",
+                  "pm.test('Há grupo com contagem', () => pm.expect(r.grupos.some((g) => g.quantidade > 1)).to.eql(true));",
+                  "pm.test('Nenhum lugar do Google no zoom baixo, nem dentro dos grupos (D-03)', () => pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]));",
+                  "pm.test('Aviso de lugares do Google ocultos pelo zoom, sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'zoom' }));",
+                  "pm.test('Grupo traz a extensão para aproximar', () => {",
+                  "  const g = r.grupos.find((x) => x.quantidade > 1);",
+                  "  pm.expect(g.bbox[0]).to.be.at.most(g.localizacao.lng);",
+                  "  pm.expect(g.bbox[2]).to.be.at.least(g.localizacao.lng);",
                   "});",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
                   "  const depois = r.json().chamadas;",
                   "  const mascaras = r.json().mascaras;",
-                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
                   "});"
                 ]
               }
@@ -423,18 +455,20 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-14.2&lng=-51.9&raio_km=3000"
+            "url": "{{base_url}}/v1/mapa?bbox=-74,-34,-34,5.3&zoom=4"
           }
         },
         {
-          "name": "Raio acima de 3.000 km é recusado",
+          "name": "Janela grande demais para o zoom é recusada",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "pm.test('Explica o limite', () => pm.expect(pm.response.json().mensagem).to.include('janela grande demais'));"
                 ]
               }
             }
@@ -442,7 +476,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-14.2&lng=-51.9&raio_km=3001"
+            "url": "{{base_url}}/v1/mapa?bbox=-74,-34,-34,5.3&zoom=14"
           }
         },
         {
@@ -491,7 +525,7 @@
           }
         },
         {
-          "name": "Área sem postos: lista vazia, com as fontes consultadas",
+          "name": "Área sem postos, fora do corredor: o mapa explica",
           "event": [
             {
               "listen": "test",
@@ -499,34 +533,118 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Lista vazia', () => pm.expect(itens).to.eql([]));",
-                  "pm.test('Informa as três fontes e se estavam ligadas (UC02)', () => {",
-                  "  pm.expect(resposta.fontes.open_charge_map.ligada).to.eql(true);",
-                  "  pm.expect(resposta.fontes.verificacao_propria.ligada).to.eql(true);",
-                  "  pm.expect(resposta.fontes.google.ligada).to.eql(true);",
+                  "pm.test('Nenhum pino nem grupo', () => { pm.expect(r.pinos).to.eql([]); pm.expect(r.grupos).to.eql([]); });",
+                  "pm.test('Motivo do mapa vazio: fora do corredor (RN03, RN05)', () => pm.expect(r.mapa_vazio).to.eql('fora_do_corredor'));",
+                  "pm.test('Aviso de área não verificada', () => pm.expect(r.corredor_verificado).to.eql(false));",
+                  "pm.test('Informa as três fontes, ligadas (UC02)', () => pm.expect(r.fontes).to.eql([",
+                  "  { origem: 'open_charge_map', situacao: 'ligada' }, { origem: 'verificacao_propria', situacao: 'ligada' }, { origem: 'google', situacao: 'ligada' },",
+                  "]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-60.01799,-3.11797,-59.98201,-3.08203&zoom=14"
+          }
+        },
+        {
+          "name": "Janela invertida é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.8,-23.1,-45.9,-23.2&zoom=14"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2b · RF18 · Regra dos 100 m",
+      "item": [
+        {
+          "name": "Preparar: lugar do Google a 80 m do posto 9006 (EZVolt)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"a80m\",\n  \"lat\": -22.46818,\n  \"lng\": -44.4469,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: lugar do Google a 150 m do posto 9006",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"a150m\",\n  \"lat\": -22.467545,\n  \"lng\": -44.4469,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Distâncias medidas pelo PostGIS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Lugar a 80 m do posto 9006', () => pm.expect(pm.response.json().metros).to.be.within(79, 81));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/distancia?place_id=a150m&ocm_id=9006', (e, r) => {",
+                  "  pm.test('Lugar a 150 m do posto 9006', () => pm.expect(r.json().metros).to.be.within(149, 151));",
                   "});"
                 ]
               }
@@ -535,18 +653,42 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-3.1&lng=-60.0&raio_km=2"
+            "url": "{{apoio_url}}/__apoio/distancia?place_id=a80m&ocm_id=9006"
           }
         },
         {
-          "name": "Área inválida é recusada",
+          "name": "Lugar a 80 m some e o a 150 m aparece (RF18)",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Posto 9006 do OCM entregue', () => pm.expect(ids).to.include('ocm-9006'));",
+                  "pm.test('Lugar a 80 m é o mesmo posto e não sai separado', () => pm.expect(ids).to.not.include('google-a80m'));",
+                  "pm.test('Lugar a 150 m sai separado', () => pm.expect(ids).to.include('google-a150m'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
+                  "});"
                 ]
               }
             }
@@ -554,7 +696,89 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=99&lng=-45&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-44.46634,-22.48687,-44.42746,-22.45093&zoom=14"
+          }
+        },
+        {
+          "name": "Desligar o provedor EZVolt do posto 9006",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/3501",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": false,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Com o provedor desligado, o lugar a 80 m volta (RF18)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Posto 9006 fora da entrega', () => pm.expect(ids).to.not.include('ocm-9006'));",
+                  "pm.test('Lugar a 80 m volta a ser entregue', () => pm.expect(ids).to.include('google-a80m'));",
+                  "pm.test('Lugar a 150 m continua', () => pm.expect(ids).to.include('google-a150m'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-44.46634,-22.48687,-44.42746,-22.45093&zoom=14"
+          }
+        },
+        {
+          "name": "Religar o provedor EZVolt",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/3501",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": true,\n  \"autor\": \"Curador\"\n}"
+            }
           }
         }
       ]
@@ -643,7 +867,7 @@
           }
         },
         {
-          "name": "Entrega continua igual à cópia anterior",
+          "name": "Mapa continua igual à cópia anterior",
           "event": [
             {
               "listen": "test",
@@ -651,30 +875,11 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Mesmos postos do OCM de antes da falha (RF02)', () => pm.expect(JSON.stringify(itens.filter((i) => i.fonte.origem === 'open_charge_map').map((i) => i.id).sort())).to.eql(pm.collectionVariables.get('ocm_ids_sjc')));"
+                  "pm.test('Mesmos postos do OCM de antes da falha (RF02)', () => pm.expect(JSON.stringify(r.pinos.filter((p) => p.origem === 'open_charge_map').map((p) => p.id).sort())).to.eql(pm.collectionVariables.get('ocm_ids_sjc')));"
                 ]
               }
             }
@@ -682,7 +887,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -994,7 +1199,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 503', () => pm.response.to.have.status(503));",
-                  "pm.test('Motivo: teto atingido', () => pm.expect(pm.response.json().motivo).to.eql('teto_atingido'));",
+                  "pm.test('Motivo: teto_atingido', () => pm.expect(pm.response.json().erro).to.eql('teto_atingido'));",
+                  "pm.test('Oferece abrir no Google Maps sem consulta paga (RN20)', () => pm.expect(pm.response.json().link_externo).to.include('query_place_id=dubleA'));",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
@@ -1009,7 +1215,49 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/google-dubleA"
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Com o teto atingido, o pedido de área continua e não consulta o Google",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Entrega os postos do OCM e os lugares do Google ainda no prazo (UC02)', () => pm.expect(ids).to.include.members(['ocm-9001', 'ocm-9002', 'google-dubleA', 'google-dubleB']));",
+                  "pm.test('Google segue ligado na resposta', () => pm.expect(r.fontes.find((f) => f.origem === 'google').situacao).to.eql('ligada'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma consulta ao Google, nem busca nem ficha (RN15, RN21)', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -1091,7 +1339,7 @@
           }
         },
         {
-          "name": "Google desligado: entrega só OCM e próprios",
+          "name": "Google desligado: mapa só com OCM e próprios",
           "event": [
             {
               "listen": "prerequest",
@@ -1109,38 +1357,20 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Nenhum lugar do Google entregue', () => pm.expect(itens.filter((i) => i.fonte.origem === 'google')).to.eql([]));",
+                  "pm.test('Nenhum lugar do Google entregue', () => pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]));",
                   "pm.test('OCM continua sendo entregue', () => pm.expect(ids).to.include.members(['ocm-9001', 'ocm-9002']));",
-                  "pm.test('Resposta informa que o Google está desligado', () => pm.expect(resposta.fontes.google.ligada).to.eql(false));",
+                  "pm.test('Resposta informa que o Google está desligado', () => pm.expect(r.fontes.find((f) => f.origem === 'google').situacao).to.eql('desligada'));",
+                  "pm.test('Sem aviso de lugares do Google ocultos', () => pm.expect(r.ocultos.sem_contagem.ha_ocultos).to.eql(false));",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
                   "  const depois = r.json().chamadas;",
                   "  const mascaras = r.json().mascaras;",
-                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca - antes.google_busca).to.eql(0));",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_busca + depois.google_ficha - antes.google_busca - antes.google_ficha).to.eql(0));",
                   "});"
                 ]
               }
@@ -1149,7 +1379,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=7"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.94841,-23.25288,-45.81159,-23.12712&zoom=14"
           }
         },
         {
@@ -1212,7 +1442,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 503', () => pm.response.to.have.status(503));",
-                  "pm.test('Motivo: desligada', () => pm.expect(pm.response.json().motivo).to.eql('desligada'));"
+                  "pm.test('Motivo: desligada', () => pm.expect(pm.response.json().erro).to.eql('desligada'));",
+                  "pm.test('Oferece abrir no Google Maps sem consulta paga (RN20)', () => pm.expect(pm.response.json().link_externo).to.include('query_place_id=dubleA'));"
                 ]
               }
             }
@@ -1220,7 +1451,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/google-dubleA"
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
           }
         },
         {
@@ -1294,7 +1525,7 @@
           }
         },
         {
-          "name": "Provedor desligado sai da entrega e os demais ficam",
+          "name": "Provedor desligado sai do mapa e os demais ficam",
           "event": [
             {
               "listen": "test",
@@ -1302,28 +1533,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
-                  "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
                   "pm.test('Posto do EZVolt (9002) não é entregue', () => pm.expect(ids).to.not.include('ocm-9002'));",
                   "pm.test('Posto de outro provedor (9001) continua', () => pm.expect(ids).to.include('ocm-9001'));"
@@ -1334,7 +1546,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -1441,7 +1653,7 @@
           }
         },
         {
-          "name": "OCM desligado: entrega sem postos do OCM",
+          "name": "OCM desligado: mapa sem postos do OCM",
           "event": [
             {
               "listen": "test",
@@ -1449,32 +1661,14 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Nenhum posto do OCM', () => pm.expect(itens.filter((i) => i.fonte.origem === 'open_charge_map')).to.eql([]));",
+                  "pm.test('Nenhum posto do OCM', () => pm.expect(r.pinos.filter((p) => p.origem === 'open_charge_map')).to.eql([]));",
                   "pm.test('Google continua', () => pm.expect(ids).to.include('google-dubleA'));",
-                  "pm.test('Sem o OCM, o lugar perto do 9001 deixa de ser duplicado e aparece', () => pm.expect(ids).to.include('google-dubleOcm'));"
+                  "pm.test('Sem o OCM, o lugar perto do 9001 deixa de ser duplicado e aparece', () => pm.expect(ids).to.include('google-dubleOcm'));",
+                  "pm.test('Resposta informa que o OCM está desligado', () => pm.expect(r.fontes.find((f) => f.origem === 'open_charge_map').situacao).to.eql('desligada'));"
                 ]
               }
             }
@@ -1482,7 +1676,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -1534,6 +1728,7 @@
                 "exec": [
                   "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));",
+                  "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, r) => pm.collectionVariables.set('coord_dubleA_antes', r.json().find((l) => l.place_id === 'dubleA').coordenada_obtida_em));"
                 ]
               }
@@ -1545,27 +1740,29 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const r = pm.response.json();",
-                  "pm.test('Entrega a ficha traduzida para o formato do REVOLT (RF05)', () => {",
-                  "  pm.expect(r.id).to.eql('google-dubleA');",
-                  "  pm.expect(r.nome).to.eql('Eletroposto Dublê A');",
-                  "  pm.expect(r.endereco).to.include('Rua do Dublê');",
-                  "  pm.expect(r.situacao).to.eql('operacional');",
-                  "  pm.expect(r.conectores).to.eql([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2, disponiveis: null }]);",
-                  "  pm.expect(r.pagamento).to.include('cartao_credito');",
-                  "});",
-                  "pm.test('Com origem e condições de uso do Google (RN05)', () => {",
-                  "  pm.expect(r.fonte.origem).to.eql('google');",
-                  "  pm.expect(r.fonte.condicoes_uso).to.include('mapa do Google');",
-                  "});",
+                  "const a = r.atributos || {};",
                   "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(r);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });",
+                  "pm.test('Entrega a ficha traduzida para o vocabulário do REVOLT (RF05)', () => {",
+                  "  pm.expect(r.id).to.eql('google-dubleA');",
+                  "  pm.expect(a.nome).to.eql({ valor: 'Eletroposto Dublê A', origem: 'google', data: hoje });",
+                  "  pm.expect(a.endereco.valor).to.include('Rua do Dublê');",
+                  "  pm.expect(a.situacao.valor).to.eql('operacional');",
+                  "  pm.expect(a.conectores.valor).to.eql([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2 }]);",
+                  "  pm.expect(a.pagamento.valor).to.include('cartao_credito');",
+                  "  pm.expect(a.horario.valor).to.be.an('array').that.is.not.empty;",
                   "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(r.eletropostos || r);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
+                  "pm.test('Disponibilidade só com o horário e a fonte (RN02 do app)', () => pm.expect(a.disponibilidade).to.eql({",
+                  "  valor: { conectores: [{ tipo: 'CCS2', disponiveis: 1, fora_de_operacao: 0 }], informada_em: '2026-11-12T10:00:00Z' }, origem: 'google', data: hoje,",
+                  "}));",
+                  "pm.test('O que o Google não informa vem como não informado', () => pm.expect(a.preco).to.eql({ valor: null, origem: null, data: null }));",
+                  "pm.test('Origem, não verificado e condições de uso do Google (RN05, RN06 do app)', () => {",
+                  "  pm.expect(r.origem).to.eql('google');",
+                  "  pm.expect(r.verificacao.situacao).to.eql('nao_verificado');",
+                  "  pm.expect(r.condicoes_de_uso.exibicao).to.eql('somente_sobre_mapa_google');",
+                  "  pm.expect(r.condicoes_de_uso.pode_ler_em_voz).to.eql(false);",
                   "});",
+                  "pm.test('Link para abrir no Google Maps', () => pm.expect(r.link_externo).to.eql('https://maps.google.com/?cid=dubleA'));",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
@@ -1574,6 +1771,7 @@
                   "  pm.test('Uma consulta de ficha ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(1));",
                   "  pm.test('Pediu ao Google só os campos da ficha (RF05)', () => pm.expect(mascaras.ficha).to.eql('id,displayName,formattedAddress,location,businessStatus,currentOpeningHours,evChargeOptions,paymentOptions,googleMapsUri'));",
                   "});",
+                  "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, t) => {",
                   "  const dubleA = t.json().find((l) => l.place_id === 'dubleA');",
                   "  pm.test('A ficha renovou a data da coordenada (UC03)', () => pm.expect(new Date(dubleA.coordenada_obtida_em) > new Date(pm.collectionVariables.get('coord_dubleA_antes'))).to.eql(true));",
@@ -1585,7 +1783,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/google-dubleA"
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
           }
         },
         {
@@ -1626,6 +1824,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Motivo: lugar não guardado', () => pm.expect(pm.response.json().erro).to.eql('lugar_nao_guardado'));",
                   "",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
@@ -1640,7 +1839,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/google-nunca-buscado"
+            "url": "{{base_url}}/v1/eletropostos/google-nunca-buscado"
           }
         },
         {
@@ -1685,7 +1884,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 404', () => pm.response.to.have.status(404));",
-                  "pm.test('Motivo: lugar inexistente no Google (UC03)', () => pm.expect(pm.response.json().motivo).to.eql('lugar_inexistente_no_google'));",
+                  "pm.test('Motivo: lugar inexistente no Google (UC03)', () => pm.expect(pm.response.json().erro).to.eql('lugar_inexistente_no_google'));",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/tabela/google_lugar', (e, r) => {",
                   "  pm.test('Identificador removido', () => pm.expect(r.json().map((l) => l.place_id)).to.not.include('sumiu'));",
                   "});"
@@ -1696,7 +1895,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/google-sumiu"
+            "url": "{{base_url}}/v1/eletropostos/google-sumiu"
           }
         },
         {
@@ -1733,7 +1932,7 @@
           }
         },
         {
-          "name": "Google fora do ar: a entrega não depende dele",
+          "name": "Google fora do ar: o mapa não depende dele",
           "event": [
             {
               "listen": "test",
@@ -1741,28 +1940,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
-                  "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
                   "pm.test('Pedido não falha e traz o OCM e os lugares do Google da base (§6.3)', () => pm.expect(ids).to.include.members(['ocm-9001', 'ocm-9002', 'google-dubleA']));"
                 ]
@@ -1772,7 +1952,28 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=6"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.93864,-23.24390,-45.82136,-23.13610&zoom=14"
+          }
+        },
+        {
+          "name": "Google fora do ar: a ficha oferece o Google Maps",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Motivo: fora_do_ar', () => pm.expect(pm.response.json().erro).to.eql('fora_do_ar'));",
+                  "pm.test('Oferece abrir no Google Maps sem consulta paga (RN20)', () => pm.expect(pm.response.json().link_externo).to.include('query_place_id=dubleB'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleB"
           }
         },
         {
@@ -2077,28 +2278,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
-                  "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
                   "pm.test('Coordenada de 31 dias não entregue (RN07)', () => pm.expect(ids).to.not.include('google-velho31'));",
                   "pm.test('Coordenada de 29 dias entregue (RN07)', () => pm.expect(ids).to.include('google-velho29'));"
@@ -2109,7 +2291,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.0204&lng=-45.554&raio_km=3"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.58328,-23.04735,-45.52472,-22.99345&zoom=14"
           }
         },
         {
@@ -2226,46 +2408,21 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "const ocm = itens.find((i) => i.id === 'ocm-9001');",
-                  "pm.test('Posto do OCM verificado, com a data da observação (RF07)', () => {",
-                  "  pm.expect(ocm.verificacao.situacao).to.eql('verificado');",
-                  "  pm.expect(ocm.verificacao.data).to.eql('2026-11-10');",
+                  "const ocm = pino('ocm-9001');",
+                  "pm.test('Posto do OCM verificado, com o dia da observação (RF07, RN01 do app)', () => {",
+                  "  pm.expect(ocm.verificacao).to.eql({ situacao: 'verificado', data: '2026-11-10' });",
+                  "  pm.expect(ocm.atualizado_em).to.eql('2026-11-10');",
                   "});",
                   "pm.test('Dado da fonte não mudou', () => {",
                   "  pm.expect(ocm.nome).to.eql('Posto dublê 9001');",
-                  "  pm.expect(ocm.fonte.origem).to.eql('open_charge_map');",
-                  "  pm.expect(ocm.fonte.licenca).to.eql('CC BY 4.0');",
+                  "  pm.expect(ocm.origem).to.eql('open_charge_map');",
+                  "  pm.expect(ocm.condicoes_de_uso.licenca).to.eql('CC BY 4.0');",
                   "});",
-                  "pm.test('A observação vem dentro do mesmo eletroposto, com origem própria', () => {",
-                  "  pm.expect(ocm.verificacao.origem).to.eql('verificacao_propria');",
-                  "  pm.expect(ocm.verificacao.licenca).to.eql('Própria (REVOLT)');",
-                  "  pm.expect(ocm.verificacao.preco).to.eql('R$ 2,10/kWh');",
-                  "  pm.expect(ocm.verificacao.conectores[0].tipo).to.eql('CCS2');",
-                  "});",
-                  "pm.test('Um item só: o registro próprio não aparece duplicado', () => pm.expect(itens.filter((i) => i.fonte.origem === 'verificacao_propria')).to.eql([]));"
+                  "pm.test('Um item só: o registro próprio não aparece duplicado', () => pm.expect(r.pinos.filter((p) => p.origem === 'verificacao_propria')).to.eql([]));"
                 ]
               }
             }
@@ -2273,11 +2430,11 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
-          "name": "Detalhe do eletroposto ocm-9001",
+          "name": "Ficha do posto ocm-9001, verificado",
           "event": [
             {
               "listen": "test",
@@ -2286,21 +2443,31 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const r = pm.response.json();",
-                  "pm.test('Mesmo formato da lista, com a verificação dentro', () => {",
-                  "  pm.expect(r.id).to.eql('ocm-9001');",
-                  "  pm.expect(r.fonte.origem).to.eql('open_charge_map');",
-                  "  pm.expect(r.verificacao.situacao).to.eql('verificado');",
-                  "  pm.expect(r.verificacao.preco).to.eql('R$ 2,10/kWh');",
-                  "});",
+                  "const a = r.atributos || {};",
                   "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(r);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
+                  "const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });",
+                  "const daVerificacao = (valor) => ({ valor, origem: 'verificacao_propria', data: '2026-11-10' });",
+                  "pm.test('Item do OCM, verificado em campo', () => {",
+                  "  pm.expect(r.id).to.eql('ocm-9001');",
+                  "  pm.expect(r.origem).to.eql('open_charge_map');",
+                  "  pm.expect(r.verificacao).to.eql({ situacao: 'verificado', data: '2026-11-10' });",
                   "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(r.eletropostos || r);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});"
+                  "pm.test('Atributos observados vêm da verificação, com origem e data (RF04 do app)', () => {",
+                  "  pm.expect(a.preco).to.eql(daVerificacao('R$ 2,10/kWh'));",
+                  "  pm.expect(a.regras_cobranca).to.eql(daVerificacao('Cobrança por kWh'));",
+                  "  pm.expect(a.taxa_ociosidade).to.eql(daVerificacao('R$ 1,00/min após 10 min de carga completa'));",
+                  "  pm.expect(a.pre_autorizacao).to.eql(daVerificacao('R$ 50,00 no cartão'));",
+                  "  pm.expect(a.app_exigido).to.eql(daVerificacao('App da rede'));",
+                  "  pm.expect(a.pagamento_sem_app).to.eql(daVerificacao(false));",
+                  "  pm.expect(a.acesso).to.eql(daVerificacao({ tipo: 'publico', restricao: null }));",
+                  "  pm.expect(a.funcionamento).to.eql(daVerificacao('funcionando'));",
+                  "  pm.expect(a.conectores).to.eql(daVerificacao([{ tipo: 'CCS2', potencia_kw: 60, quantidade: 2 }]));",
+                  "});",
+                  "pm.test('Nome e endereço vêm do OCM, com a data da importação', () => {",
+                  "  pm.expect(a.nome).to.eql({ valor: 'Posto dublê 9001', origem: 'open_charge_map', data: hoje });",
+                  "  pm.expect(a.endereco.origem).to.eql('open_charge_map');",
+                  "});",
+                  "pm.test('Disponibilidade nunca sem fonte e horário (RN02 do app)', () => pm.expect(a.disponibilidade).to.eql({ valor: null, origem: null, data: null }));"
                 ]
               }
             }
@@ -2308,18 +2475,19 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/ocm-9001"
+            "url": "{{base_url}}/v1/eletropostos/ocm-9001"
           }
         },
         {
-          "name": "Detalhe de eletroposto inexistente",
+          "name": "Ficha de posto inexistente",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Erro no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('nao_encontrado'));"
                 ]
               }
             }
@@ -2327,7 +2495,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos/ocm-999999"
+            "url": "{{base_url}}/v1/eletropostos/ocm-999999"
           }
         },
         {
@@ -2365,7 +2533,7 @@
           }
         },
         {
-          "name": "Entrega usa a verificação mais recente",
+          "name": "Mapa e ficha usam a verificação mais recente",
           "event": [
             {
               "listen": "test",
@@ -2373,31 +2541,17 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Data da última observação (RN14)', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.data).to.eql('2026-11-11'));",
-                  "pm.test('Atributos da última observação', () => pm.expect(itens.find((i) => i.id === 'ocm-9001').verificacao.preco).to.eql('R$ 2,30/kWh'));"
+                  "pm.test('Dia da última observação (RN14)', () => pm.expect(pino('ocm-9001').verificacao.data).to.eql('2026-11-11'));",
+                  "pm.test('Funcionamento parcial segue operacional', () => pm.expect(pino('ocm-9001').situacao).to.eql('operacional'));",
+                  "pm.sendRequest(pm.variables.get('base_url') + '/v1/eletropostos/ocm-9001', (e, f) => {",
+                  "  const a = f.json().atributos;",
+                  "  pm.test('Atributos da última observação', () => pm.expect(a.preco).to.eql({ valor: 'R$ 2,30/kWh', origem: 'verificacao_propria', data: '2026-11-11' }));",
+                  "  pm.test('O que a última observação não informou vem da fonte', () => pm.expect(a.conectores.origem).to.eql('open_charge_map'));",
+                  "});"
                 ]
               }
             }
@@ -2405,7 +2559,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -2696,36 +2850,27 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
-                  "",
-                  "pm.test('Lugar dubleB não é entregue como item do Google (RN12)', () => pm.expect(ids).to.not.include('google-dubleB'));",
+                  "pm.test('Lugar dubleB não é entregue como item do Google (RN17)', () => pm.expect(ids).to.not.include('google-dubleB'));",
                   "pm.test('Lugar dubleA, sem vínculo, continua separado', () => pm.expect(ids).to.include('google-dubleA'));",
-                  "const proprio = itens.find((i) => i.id === 'propria-' + pm.collectionVariables.get('posto_novo_id'));",
-                  "pm.test('Registro próprio traz o eletroposto do Google vinculado', () => pm.expect(proprio.verificacao.lugar_google).to.eql('google-dubleB'));",
-                  "pm.test('Nenhum campo do Google copiado para o registro próprio (RN10)', () => {",
-                  "  const texto = JSON.stringify(proprio);",
-                  "  for (const campo of ['Eletroposto Dublê B', 'Rua do Dublê', 'displayName', 'formattedAddress', 'evChargeOptions']) pm.expect(texto).to.not.include(campo);",
+                  "const id = 'propria-' + pm.collectionVariables.get('posto_novo_id');",
+                  "pm.test('Registro próprio entregue', () => pm.expect(ids).to.include(id));",
+                  "pm.sendRequest(pm.variables.get('base_url') + '/v1/eletropostos/' + id, (e, f) => {",
+                  "  const ficha = f.json();",
+                  "  pm.test('A ficha do registro próprio traz o lugar do Google vinculado (RN17)', () => pm.expect(ficha.lugar_vinculado).to.eql('google-dubleB'));",
+                  "  pm.test('Nenhum campo do Google copiado para o registro próprio (RN10)', () => {",
+                  "    const texto = JSON.stringify(ficha);",
+                  "    for (const campo of ['Eletroposto Dublê B', 'Rua do Dublê', 'displayName', 'formattedAddress', 'evChargeOptions']) pm.expect(texto).to.not.include(campo);",
+                  "  });",
+                  "  pm.test('Registro próprio, verificado, sem nome informado', () => {",
+                  "    pm.expect(ficha.origem).to.eql('verificacao_propria');",
+                  "    pm.expect(ficha.condicoes_de_uso.atribuicao).to.eql(null);",
+                  "    pm.expect(ficha.atributos.nome.valor).to.eql(null);",
+                  "    pm.expect(ficha.atributos.preco).to.eql({ valor: 'Grátis', origem: 'verificacao_propria', data: '2026-11-11' });",
+                  "  });",
                   "});"
                 ]
               }
@@ -2734,7 +2879,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -2779,28 +2924,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const resposta = pm.response.json();",
-                  "const itens = resposta.eletropostos;",
-                  "const ids = itens.map((i) => i.id);",
-                  "",
-                  "pm.test('Todo eletroposto traz origem, licença, condições de uso, situação de verificação e data (RF03)', () => {",
-                  "  for (const i of itens) {",
-                  "    pm.expect(i.fonte.origem, i.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-                  "    pm.expect(i.fonte.licenca, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.fonte.condicoes_uso, i.id).to.be.a('string').and.not.empty;",
-                  "    pm.expect(i.verificacao.situacao, i.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-                  "    pm.expect(i.fonte.data, i.id).to.be.a('string').and.not.empty;",
-                  "  }",
-                  "});",
-                  "",
-                  "pm.test('Só o vocabulário do REVOLT: nenhum campo cru do OCM ou do Google', () => {",
-                  "  const texto = JSON.stringify(resposta);",
-                  "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-                  "});",
-                  "pm.test('Conectores só com os tipos do REVOLT', () => {",
-                  "  const lista = [].concat(resposta.eletropostos || resposta);",
-                  "  for (const e of lista) for (const c of (e.conectores || [])) pm.expect(c.tipo).to.be.oneOf(['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO']);",
-                  "});",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
                   "",
                   "pm.test('Registro próprio não entregue', () => pm.expect(ids).to.not.include('propria-' + pm.collectionVariables.get('posto_novo_id')));",
                   "pm.test('O lugar vinculado aparece, para o posto não sumir do mapa', () => pm.expect(ids).to.include('google-dubleB'));"
@@ -2811,7 +2937,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/eletropostos?lat=-23.19&lng=-45.88&raio_km=5"
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
           }
         },
         {
@@ -3001,6 +3127,1027 @@
       ]
     },
     {
+      "name": "9 · /v1 · Mapa, ficha, atestado e conta",
+      "item": [
+        {
+          "name": "Posto próprio A: Tipo 2, 22 kW, público, grátis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('p_tipo2_gratis', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.733,\n    \"lng\": -45.127\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 22,\n      \"quantidade\": 2\n    }\n  ],\n  \"acesso\": \"publico\",\n  \"preco\": \"Grátis\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Posto próprio B: CCS2, 150 kW, restrito, pago",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('p_ccs2_restrito', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.736,\n    \"lng\": -45.124\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 150,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"restrito\",\n  \"preco\": \"R$ 2,50/kWh\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Posto próprio C: CHAdeMO 50 kW e Tipo 2, público, sem preço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('p_chademo', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.737,\n    \"lng\": -45.122\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CHADEMO\",\n      \"potencia_kw\": 50,\n      \"quantidade\": 1\n    },\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 7,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"publico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Posto próprio D: sem conector, acesso e preço informados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('p_desconhecido', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.734,\n    \"lng\": -45.121\n  },\n  \"funcionamento\": \"funcionando\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: lugar do Google em Lorena, longe de posto do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"lorena\",\n  \"lat\": -22.7355,\n  \"lng\": -45.1285,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Mapa sem filtro: próprios e o lugar do Google, um a um",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const a = pino(pm.collectionVariables.get('p_tipo2_gratis'));",
+                  "pm.test('Quatro próprios e o lugar do Google', () => pm.expect(ids).to.have.length(5));",
+                  "pm.test('Pino do próprio: origem, verificação, data e condições (RN01 do app)', () => {",
+                  "  pm.expect(a.origem).to.eql('verificacao_propria');",
+                  "  pm.expect(a.verificacao).to.eql({ situacao: 'verificado', data: '2026-11-12' });",
+                  "  pm.expect(a.atualizado_em).to.eql('2026-11-12');",
+                  "  pm.expect(a.condicoes_de_uso.atribuicao).to.eql(null);",
+                  "  pm.expect(a.conectores).to.eql(['TIPO_2']);",
+                  "  pm.expect(a.potencia_max_kw).to.eql(22);",
+                  "});",
+                  "pm.test('Pino do próprio sem conector informado', () => {",
+                  "  const d = pino(pm.collectionVariables.get('p_desconhecido'));",
+                  "  pm.expect(d.conectores).to.eql([]);",
+                  "  pm.expect(d.potencia_max_kw).to.eql(null);",
+                  "});",
+                  "pm.test('Lugar do Google sem filtro, no zoom alto', () => pm.expect(ids).to.include('google-lorena'));",
+                  "pm.test('Nada oculto', () => pm.expect(r.ocultos).to.eql({ total: 0, por_motivo: { conector: 0, potencia: 0, rapida: 0, publico: 0, gratuito: 0 }, sem_contagem: { ha_ocultos: false, motivo: null } }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14"
+          }
+        },
+        {
+          "name": "Filtro de conector (perfil do carro Tipo 2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_chademo\", \"p_tipo2_gratis\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(2));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 2, \"potencia\": 0, \"rapida\": 0, \"publico\": 0, \"gratuito\": 0}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&conectores=TIPO_2"
+          }
+        },
+        {
+          "name": "Filtro de potência mínima de 50 kW",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_ccs2_restrito\", \"p_chademo\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(2));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 0, \"potencia\": 2, \"rapida\": 0, \"publico\": 0, \"gratuito\": 0}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&potencia_min=50"
+          }
+        },
+        {
+          "name": "Filtro de carga rápida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_ccs2_restrito\", \"p_chademo\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(2));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 0, \"potencia\": 0, \"rapida\": 2, \"publico\": 0, \"gratuito\": 0}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&rapida=true"
+          }
+        },
+        {
+          "name": "Filtro de acesso público",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_chademo\", \"p_tipo2_gratis\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(2));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 0, \"potencia\": 0, \"rapida\": 0, \"publico\": 2, \"gratuito\": 0}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&publico=true"
+          }
+        },
+        {
+          "name": "Filtro de gratuito",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_tipo2_gratis\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(3));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 0, \"potencia\": 0, \"rapida\": 0, \"publico\": 0, \"gratuito\": 3}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&gratuito=true"
+          }
+        },
+        {
+          "name": "Dois filtros: Tipo 2 e 50 kW (um posto conta nos dois motivos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const nomes = {};",
+                  "for (const k of ['p_tipo2_gratis', 'p_ccs2_restrito', 'p_chademo', 'p_desconhecido']) nomes[pm.collectionVariables.get(k)] = k;",
+                  "pm.test('Mostra só os compatíveis', () => pm.expect(ids.map((i) => nomes[i] || i).sort()).to.eql([\"p_chademo\"]));",
+                  "pm.test('Contagem de ocultos bate com a contagem manual (RNF-03)', () => pm.expect(r.ocultos.total).to.eql(3));",
+                  "pm.test('Contagem por motivo bate com a contagem manual (RF02, RN04)', () => pm.expect(r.ocultos.por_motivo).to.eql({\"conector\": 2, \"potencia\": 2, \"rapida\": 0, \"publico\": 0, \"gratuito\": 0}));",
+                  "pm.test('Lugar do Google oculto pelo filtro, só com aviso e sem número (RN08)', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&conectores=TIPO_2&potencia_min=50"
+          }
+        },
+        {
+          "name": "Filtro que esconde tudo: o mapa explica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Nenhum pino', () => pm.expect(r.pinos).to.eql([]));",
+                  "pm.test('Motivo do mapa vazio: filtro ativo (RN03)', () => pm.expect(r.mapa_vazio).to.eql('filtro_ativo'));",
+                  "pm.test('Quantos estão ocultos e por quê (RN03, RN04)', () => { pm.expect(r.ocultos.total).to.eql(4); pm.expect(r.ocultos.por_motivo.conector).to.eql(4); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&conectores=GBT"
+          }
+        },
+        {
+          "name": "Zoom 10: os quatro próprios num grupo, sem o lugar do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "const g = r.grupos.find((x) => x.quantidade === 4);",
+                  "pm.test('Um grupo com os quatro próprios (D-03)', () => pm.expect(g).to.be.an('object'));",
+                  "pm.test('O grupo não conta o lugar do Google', () => pm.expect(r.grupos.reduce((s, x) => s + x.quantidade, 0) + r.pinos.length).to.eql(4));",
+                  "pm.test('Extensão do grupo cobre os quatro postos', () => pm.expect(g.bbox).to.eql([-45.127, -22.737, -45.121, -22.733]));",
+                  "pm.test('Aviso de lugares do Google ocultos pelo zoom', () => pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'zoom' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.17370,-22.77992,-45.07630,-22.69008&zoom=10"
+          }
+        },
+        {
+          "name": "Zoom 12 só com lugares do Google: o mapa pede para aproximar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Nenhum pino nem grupo', () => { pm.expect(r.pinos).to.eql([]); pm.expect(r.grupos).to.eql([]); });",
+                  "pm.test('Motivo do mapa vazio: zoom insuficiente', () => pm.expect(r.mapa_vazio).to.eql('zoom_insuficiente'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-46.18979,-23.38898,-46.17021,-23.37102&zoom=12"
+          }
+        },
+        {
+          "name": "Área da Dutra sem postos conhecidos: o mapa explica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Dentro do corredor', () => pm.expect(r.corredor_verificado).to.eql(true));",
+                  "pm.test('Motivo do mapa vazio: nenhum posto conhecido (RN03)', () => pm.expect(r.mapa_vazio).to.eql('nenhum_posto_conhecido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.31300,-22.90905,-45.29350,-22.89109&zoom=14"
+          }
+        },
+        {
+          "name": "Desligar a fonte OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Área só com posto do OCM, com o OCM desligado: o mapa explica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Motivo do mapa vazio: fonte indisponível (RN03)', () => pm.expect(r.mapa_vazio).to.eql('fonte_indisponivel'));",
+                  "pm.test('Diz qual fonte', () => pm.expect(r.fontes.find((f) => f.origem === 'open_charge_map').situacao).to.eql('desligada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.20325,-22.82518,-45.18375,-22.80722&zoom=14"
+          }
+        },
+        {
+          "name": "Religar a fonte OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha de um próprio sem preço nem conector: não informado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const a = r.atributos || {};",
+                  "",
+                  "const nada = { valor: null, origem: null, data: null };",
+                  "pm.test('Atributo ausente vem como não informado, sem valor inventado (RF04 do app)', () => {",
+                  "  for (const k of ['conectores', 'preco', 'acesso', 'regras_cobranca', 'carregadores', 'disponibilidade', 'nome']) pm.expect(a[k], k).to.eql(nada);",
+                  "});",
+                  "pm.test('Funcionamento observado, com origem e data', () => pm.expect(a.funcionamento).to.eql({ valor: 'funcionando', origem: 'verificacao_propria', data: '2026-11-12' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/{{p_desconhecido}}"
+          }
+        },
+        {
+          "name": "Filtro com conector fora do vocabulário é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14&conectores=Type2"
+          }
+        },
+        {
+          "name": "Zoom fora do intervalo é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13,-22.74,-45.12,-22.73&zoom=23"
+          }
+        },
+        {
+          "name": "bbox com três números é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13,-22.74,-45.12&zoom=14"
+          }
+        },
+        {
+          "name": "Zoom baixo com janela além do mundo é recortada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Janela recortada nos limites do mundo', () => pm.expect(r.janela.bbox).to.eql([-180, -90, 180, 90]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-250,-100,250,100&zoom=1"
+          }
+        },
+        {
+          "name": "[sem atestado] Mapa sem atestado do app não traz dados do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const ids = r.pinos.map((p) => p.id);",
+                  "const pino = (id) => r.pinos.find((p) => p.id === id);",
+                  "",
+                  "pm.test('Postos próprios continuam', () => pm.expect(ids).to.include(pm.collectionVariables.get('p_tipo2_gratis')));",
+                  "pm.test('Nenhum lugar do Google', () => pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]));",
+                  "pm.test('Fonte google não autorizada para este pedido', () => pm.expect(r.fontes.find((f) => f.origem === 'google').situacao).to.eql('nao_autorizada'));",
+                  "pm.test('Nem o aviso de lugares ocultos', () => pm.expect(r.ocultos.sem_contagem.ha_ocultos).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.13474,-22.74398,-45.11526,-22.72602&zoom=14"
+          }
+        },
+        {
+          "name": "[sem atestado] Ficha do Google sem atestado é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Guarda quantas vezes os dublês do OCM e do Google foram chamados antes deste pedido.",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Motivo: atestado inválido', () => pm.expect(pm.response.json().erro).to.eql('atestado_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Ficha do Google com atestado de chave desconhecida é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"atestado\", \"chave_desconhecida\": true}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Atestado-App",
+                "value": "{{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Ficha do Google com atestado vencido é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"atestado\", \"expirado\": true}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Atestado-App",
+                "value": "{{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Trava contra ritmo de robô: a 21ª ficha seguida do mesmo aparelho é barrada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 20 fichas seguidas do mesmo aparelho, o limite do ambiente de teste (LIMITE_FICHAS_GOOGLE).",
+                  "const pedidoFicha = { url: pm.variables.get('base_url') + '/v1/eletropostos/google-dubleA', header: { 'X-Aparelho': 'aparelho-robo', 'X-Atestado-App': pm.collectionVariables.get('atestado') } };",
+                  "let feitos = 0;",
+                  "const proximo = () => {",
+                  "  if (feitos++ < 20) return pm.sendRequest(pedidoFicha, (e, r) => { if (r.code !== 200) console.error('ficha falhou', r.code); proximo(); });",
+                  "  // Só depois das 20: guarda as chamadas aos dublês para provar que a 21ª não chega ao Google.",
+                  "  pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));",
+                  "};",
+                  "proximo();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 429', () => pm.response.to.have.status(429));",
+                  "pm.test('Motivo: ritmo de robô', () => pm.expect(pm.response.json().erro).to.eql('ritmo_de_robo'));",
+                  "pm.test('Oferece o Google Maps', () => pm.expect(pm.response.json().link_externo).to.include('query_place_id=dubleA'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  const mascaras = r.json().mascaras;",
+                  "  pm.test('Nenhuma chamada ao Google', () => pm.expect(depois.google_ficha - antes.google_ficha).to.eql(0));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "aparelho-robo"
+              }
+            ],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Outro aparelho continua recebendo a ficha: a trava não é por pessoa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Ficha do lugar', () => pm.expect(pm.response.json().id).to.eql('google-dubleA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "outro-aparelho"
+              }
+            ],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Conta sem token é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Motivo: conta necessária', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta com token do login gerenciado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"conta\", \"sub\": \"pessoa-teste\"}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Devolve o identificador da conta', () => pm.expect(pm.response.json()).to.eql({ id: 'pessoa-teste' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta com token vencido é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"conta\", \"expirado\": true}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta com token de outro público é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"conta\", \"publico\": \"outro-app\"}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Token do atestado não serve como conta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({ url: pm.variables.get('apoio_url') + '/__apoio/token', method: 'POST', header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({\"tipo\": \"atestado\"}) } }, (e, r) => pm.collectionVariables.set('token_teste', r.json().token));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_teste}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        }
+      ]
+    },
+    {
       "name": "8 · RF10 · Excluir a fonte Google",
       "description": "Excluir os dados do Google apaga identificadores e coordenadas, mas mantém o vínculo guardado no registro próprio.",
       "item": [
@@ -3100,6 +4247,91 @@
           }
         }
       ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Atestado do app (D-09): todo pedido à /v1 leva um token do dublê do atestado, menos os marcados com",
+          "// \"[sem atestado]\" no nome e os que já trazem o seu próprio cabeçalho (testes de token inválido).",
+          "if (pm.request.url.toString().includes('/v1/') && !pm.info.requestName.includes('[sem atestado]') && !pm.request.headers.has('X-Atestado-App')) {",
+          "  const usar = (token) => pm.request.headers.upsert({ key: 'X-Atestado-App', value: token });",
+          "  const guardado = pm.collectionVariables.get('atestado');",
+          "  if (guardado) usar(guardado);",
+          "  else",
+          "    pm.sendRequest(",
+          "      {",
+          "        url: pm.variables.get('apoio_url') + '/__apoio/token',",
+          "        method: 'POST',",
+          "        header: { 'Content-Type': 'application/json' },",
+          "        body: { mode: 'raw', raw: JSON.stringify({ tipo: 'atestado' }) },",
+          "      },",
+          "      (erro, r) => {",
+          "        pm.collectionVariables.set('atestado', r.json().token);",
+          "        usar(r.json().token);",
+          "      },",
+          "    );",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Conferência de contrato: toda resposta da /v1 é comparada com a especificação OpenAPI que a própria API gera",
+          "// (guardada pelo primeiro pedido da pasta 0). Campo a mais, campo a menos ou tipo errado reprova.",
+          "const caminho = pm.request.url.getPath();",
+          "if (caminho.startsWith('/v1/') && caminho !== '/v1/openapi.json') {",
+          "  const textoDoc = pm.collectionVariables.get('openapi');",
+          "  pm.test('Contrato: especificação OpenAPI carregada', () => pm.expect(textoDoc, 'rode a coleção desde a pasta 0').to.be.ok);",
+          "  if (textoDoc) {",
+          "    const doc = JSON.parse(textoDoc);",
+          "    const metodo = pm.request.method.toLowerCase();",
+          "    const rota = Object.keys(doc.paths).find((p) => new RegExp('^' + p.replace(/\\{[^}]+\\}/g, '[^/]+') + '$').test(caminho));",
+          "    const resposta = rota && doc.paths[rota][metodo] && doc.paths[rota][metodo].responses[String(pm.response.code)];",
+          "    pm.test(`Contrato: ${metodo.toUpperCase()} ${rota} documenta o status ${pm.response.code}`, () => pm.expect(resposta).to.be.an('object'));",
+          "",
+          "    // OpenAPI 3.0 -> JSON Schema: \"nullable\" vira \"aceita null\" e todo objeto com propriedades fecha a porta a campos extras.",
+          "    const converter = (s) => {",
+          "      if (Array.isArray(s)) return s.map(converter);",
+          "      if (!s || typeof s !== 'object') return s;",
+          "      const r = {};",
+          "      for (const [k, v] of Object.entries(s)) {",
+          "        if (k === 'properties') r.properties = Object.fromEntries(Object.entries(v).map(([nome, p]) => [nome, converter(p)]));",
+          "        else if (!['nullable', 'example', 'description'].includes(k)) r[k] = converter(v);",
+          "      }",
+          "      if (r.properties && r.additionalProperties === undefined) r.additionalProperties = false;",
+          "      return s.nullable ? { anyOf: [{ type: 'null' }, r] } : r;",
+          "    };",
+          "    const esquema = resposta && resposta.content && resposta.content['application/json'] && resposta.content['application/json'].schema;",
+          "    if (esquema) {",
+          "      const schemas = {};",
+          "      for (const [nome, s] of Object.entries(doc.components.schemas)) schemas[nome] = converter(s);",
+          "      pm.test('Contrato: corpo bate com o esquema da especificação', () => pm.response.to.have.jsonSchema({ allOf: [converter(esquema)], components: { schemas } }));",
+          "    }",
+          "",
+          "    const corpo = pm.response.json();",
+          "    const quatro = ['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso'];",
+          "    if (rota === '/v1/mapa' && pm.response.code === 200)",
+          "      pm.test('RNF-01: todo pino traz origem, verificação, data e condições de uso', () => {",
+          "        for (const p of corpo.pinos) for (const k of quatro) pm.expect(p[k], `${p.id}.${k}`).to.not.equal(undefined);",
+          "      });",
+          "    if (rota === '/v1/eletropostos/{id}' && pm.response.code === 200)",
+          "      pm.test('RNF-01: a ficha traz origem, verificação, data e condições de uso, e cada atributo informado tem origem e data', () => {",
+          "        for (const k of quatro) pm.expect(corpo[k], k).to.not.equal(undefined);",
+          "        for (const [nome, a] of Object.entries(corpo.atributos)) if (a.valor !== null) pm.expect([a.origem, a.data], nome).to.not.include(null);",
+          "      });",
+          "    pm.test('Vocabulário do REVOLT: nenhum campo com o nome de uma fonte', () =>",
+          "      pm.expect(pm.response.text()).to.not.match(/\"(AddressInfo|DataProvider\\w*|Connections|ConnectionType|StatusType|UsageType|UsageCost|displayName|formattedAddress|evChargeOptions|businessStatus|googleMapsUri|place_id|dados)\"\\s*:/));",
+          "  }",
+          "}"
+        ]
+      }
     }
   ]
 }

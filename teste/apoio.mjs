@@ -1,7 +1,10 @@
 // Servidor de apoio aos testes do Postman/Newman. Não chama nenhum serviço real.
 // 1) Dublês do Open Charge Map (/ocm/v3/poi) e do Google Places (/google/v1/...), com contagem de chamadas.
 // 2) Preparo e inspeção do banco de teste (/__apoio/...): reset, coordenadas antigas e busca de texto nas tabelas.
+// 3) Dublês do login gerenciado e do atestado do app (/__apoio/jwks e /__apoio/token), com chaves geradas ao subir.
+import { generateKeyPairSync } from 'node:crypto';
 import http from 'node:http';
+import { exportJWK, SignJWT } from 'jose';
 import pg from 'pg';
 
 const banco = new URL(process.env.DATABASE_URL).pathname.slice(1);
@@ -61,17 +64,44 @@ const distanciaM = (a, b) => {
   const y = (b.lat - a.lat) * rad;
   return Math.sqrt(x * x + y * y) * 6371000;
 };
+// O dubleA informa disponibilidade com horário; os outros, não.
+const DISPONIBILIDADE = { dubleA: { availableCount: 1, outOfServiceCount: 0, availabilityLastUpdateTime: '2026-11-12T10:00:00Z' } };
 const ficha = (l) => ({
   id: l.id,
   displayName: { text: l.nome, languageCode: 'pt-BR' },
   formattedAddress: l.endereco,
   location: { latitude: l.lat, longitude: l.lng },
   businessStatus: 'OPERATIONAL',
-  currentOpeningHours: { openNow: true },
-  evChargeOptions: { connectorCount: 2, connectorAggregation: [{ type: 'EV_CONNECTOR_TYPE_CCS_COMBO_2', maxChargeRateKw: 60, count: 2 }] },
+  currentOpeningHours: { openNow: true, weekdayDescriptions: ['segunda-feira: Atendimento 24 horas'] },
+  evChargeOptions: {
+    connectorCount: 2,
+    connectorAggregation: [{ type: 'EV_CONNECTOR_TYPE_CCS_COMBO_2', maxChargeRateKw: 60, count: 2, ...DISPONIBILIDADE[l.id] }],
+  },
   paymentOptions: { acceptsCreditCards: true },
   googleMapsUri: `https://maps.google.com/?cid=${l.id}`,
 });
+
+// ---------- Dublês do login gerenciado e do atestado do app ----------
+// Uma chave publicada no JWKS e outra, desconhecida, para o teste de assinatura inválida.
+const chave = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const chaveDesconhecida = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const JWKS = { keys: [{ ...(await exportJWK(chave.publicKey)), kid: 'teste', alg: 'RS256', use: 'sig' }] };
+const EMISSORES = {
+  conta: [process.env.CONTA_EMISSOR, process.env.CONTA_PUBLICO],
+  atestado: [process.env.ATESTADO_EMISSOR, process.env.ATESTADO_PUBLICO],
+};
+async function token({ tipo = 'atestado', sub = 'pessoa-teste', expirado = false, publico, chave_desconhecida = false }) {
+  const [emissor, publicoPadrao] = EMISSORES[tipo];
+  const agora = Math.floor(Date.now() / 1000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: 'teste', typ: 'JWT' })
+    .setIssuer(emissor)
+    .setAudience(publico ?? publicoPadrao)
+    .setSubject(sub)
+    .setIssuedAt(agora - 120)
+    .setExpirationTime(expirado ? agora - 60 : agora + 3600)
+    .sign((chave_desconhecida ? chaveDesconhecida : chave).privateKey);
+}
 
 // ---------- Estado dos dublês ----------
 let estado;
@@ -128,6 +158,17 @@ async function tratar(req, res) {
     if (estado.google === 'fora_do_ar') return json(res, 503, { error: { code: 503, status: 'UNAVAILABLE' } });
     const lugar = LUGARES.find((l) => l.id === decodeURIComponent(url.pathname.split('/').pop()));
     return lugar ? json(res, 200, ficha(lugar)) : json(res, 404, { error: { code: 404, status: 'NOT_FOUND' } });
+  }
+
+  if (rota === 'GET /__apoio/jwks') return json(res, 200, JWKS);
+  if (rota === 'POST /__apoio/token') return json(res, 200, { token: await token(await lerCorpo(req)) });
+  // Distância em metros entre um lugar do Google guardado e um posto do OCM, pela mesma conta do PostGIS da regra dos 100 m.
+  if (rota === 'GET /__apoio/distancia') {
+    const { rows } = await db.query(
+      'SELECT round(ST_Distance(g.local, o.local)::numeric, 1)::float8 AS metros FROM google_lugar g, ocm_posto o WHERE g.place_id = $1 AND o.ocm_id = $2',
+      [url.searchParams.get('place_id'), Number(url.searchParams.get('ocm_id'))],
+    );
+    return json(res, 200, rows[0] ?? { metros: null });
   }
 
   if (rota === 'POST /__apoio/reset') {

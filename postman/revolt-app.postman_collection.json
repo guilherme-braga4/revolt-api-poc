@@ -1,43 +1,12 @@
 {
   "info": {
     "name": "REVOLT · App (POC)",
-    "description": "Os dois endpoints que o App chama, contra a API local com a base real (environment \"REVOLT API POC · local (base real)\", porta 3333).\n\nAntes, suba a API com `npm start`. Para rodar pelo terminal: `npm run test:app`.\n\nOs testes conferem só o formato do REVOLT, não valores, porque a base real muda a cada atualização do OCM. Esta coleção só lê: não apaga nem altera nada. A coleção de testes \"REVOLT · API agregadora (POC)\" é outra coisa e não deve rodar neste environment.",
+    "description": "O que o app chama na /v1, contra a API local com a base real (environment \"REVOLT API POC · local (base real)\", porta 3333).\n\nAntes, suba a API com `npm start`. Para rodar pelo terminal: `npm run test:app`.\n\nToda resposta passa pela mesma conferência de contrato da coleção de testes (especificação OpenAPI gerada pela API). Os testes conferem o formato, não valores, porque a base real muda a cada atualização. Esta coleção só lê e não abre ficha do Google, para não gastar consulta paga. A coleção \"REVOLT · API (obtenção e /v1)\" é outra coisa e não deve rodar neste environment.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Eletropostos da área",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{base_url}}/eletropostos?lat=-23.1896&lng=-45.8841&raio_km=3",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "eletropostos"
-          ],
-          "query": [
-            {
-              "key": "lat",
-              "value": "-23.1896",
-              "description": "Latitude do centro da área."
-            },
-            {
-              "key": "lng",
-              "value": "-45.8841",
-              "description": "Longitude do centro da área."
-            },
-            {
-              "key": "raio_km",
-              "value": "3",
-              "description": "Raio em km, de 0,1 a 3.000."
-            }
-          ]
-        },
-        "description": "Eletropostos de uma área, no formato do REVOLT: cópia do OCM, registros próprios e lugares do Google.\n\n**Custo:** nenhum. O pedido lê só a base e não consulta o Google, de qualquer tamanho. Para ver o Brasil inteiro: `lat=-14.2`, `lng=-51.9` e `raio_km=3000`.\n\nOs lugares do Google vêm só com `id` e `localizacao`, trazidos pela varredura. O resto vem no detalhe. Lugar do Google a menos de 100 m de um posto do OCM não aparece."
-      },
+      "name": "Especificação OpenAPI da /v1",
       "event": [
         {
           "listen": "test",
@@ -45,103 +14,19 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('Status 200', () => pm.response.to.have.status(200));",
-              "const r = pm.response.json();",
-              "",
-              "const SITUACOES = ['operacional', 'fora_de_operacao', 'planejado', 'fechado_definitivamente', 'desconhecida'];",
-              "const TIPOS = ['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO'];",
-              "function confere(e) {",
-              "  pm.expect(e, e.id).to.have.all.keys('id', 'nome', 'endereco', 'localizacao', 'situacao', 'conectores', 'preco', 'horario', 'pagamento', 'fonte', 'verificacao');",
-              "  pm.expect(e.id).to.match(/^(ocm|propria|google)-/);",
-              "  pm.expect(e.localizacao.lat, e.id).to.be.a('number');",
-              "  pm.expect(e.localizacao.lng, e.id).to.be.a('number');",
-              "  pm.expect(e.situacao, e.id).to.be.oneOf(SITUACOES);",
-              "  for (const c of e.conectores || []) pm.expect(c.tipo, e.id).to.be.oneOf(TIPOS);",
-              "  pm.expect(e.fonte.origem, e.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-              "  pm.expect(e.fonte.licenca, e.id).to.be.a('string').and.not.empty;",
-              "  pm.expect(e.fonte.condicoes_uso, e.id).to.be.a('string').and.not.empty;",
-              "  pm.expect(e.verificacao.situacao, e.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-              "}",
-              "pm.test('Nenhum campo cru do OCM ou do Google', () => {",
-              "  const texto = pm.response.text();",
-              "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-              "});",
-              "pm.test('Resposta traz área, fontes e eletropostos', () => pm.expect(r).to.have.all.keys('area', 'fontes', 'eletropostos'));",
-              "pm.test('Todo eletroposto no formato do REVOLT', () => r.eletropostos.forEach(confere));"
+              "pm.collectionVariables.set('openapi', pm.response.text());"
             ]
           }
         }
       ],
-      "response": [
-        {
-          "name": "Exemplo: São José dos Campos (sem os 20 lugares do Google, que não podem ser gravados)",
-          "originalRequest": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/eletropostos?lat=-23.1896&lng=-45.8841&raio_km=3",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "eletropostos"
-              ],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "-23.1896",
-                  "description": "Latitude do centro da área."
-                },
-                {
-                  "key": "lng",
-                  "value": "-45.8841",
-                  "description": "Longitude do centro da área."
-                },
-                {
-                  "key": "raio_km",
-                  "value": "3",
-                  "description": "Raio em km, de 0,1 a 3.000."
-                }
-              ]
-            },
-            "description": "Eletropostos de uma área, no formato do REVOLT: cópia do OCM, registros próprios e lugares do Google.\n\n**Custo:** nenhum. O pedido lê só a base e não consulta o Google, de qualquer tamanho. Para ver o Brasil inteiro: `lat=-14.2`, `lng=-51.9` e `raio_km=3000`.\n\nOs lugares do Google vêm só com `id` e `localizacao`, trazidos pela varredura. O resto vem no detalhe. Lugar do Google a menos de 100 m de um posto do OCM não aparece."
-          },
-          "status": "OK",
-          "code": 200,
-          "_postman_previewlanguage": "json",
-          "header": [
-            {
-              "key": "Content-Type",
-              "value": "application/json; charset=utf-8"
-            }
-          ],
-          "body": "{\n  \"area\": {\n    \"lat\": -23.1896,\n    \"lng\": -45.8841,\n    \"raio_km\": 3\n  },\n  \"fontes\": {\n    \"open_charge_map\": {\n      \"ligada\": true,\n      \"itens\": 2\n    },\n    \"verificacao_propria\": {\n      \"ligada\": true,\n      \"itens\": 0\n    },\n    \"google\": {\n      \"ligada\": true,\n      \"itens\": 20,\n      \"duplicados_do_ocm\": 0\n    }\n  },\n  \"eletropostos\": [\n    {\n      \"id\": \"ocm-481262\",\n      \"nome\": \"Volvo - Faberge SJC\",\n      \"endereco\": \"Avenida Doutor Eduardo Cury, 350, Jardim da Colinas, São José dos Campos, SP, São José dos Campos\",\n      \"localizacao\": {\n        \"lat\": -23.200982,\n        \"lng\": -45.909631\n      },\n      \"situacao\": \"fora_de_operacao\",\n      \"conectores\": [\n        {\n          \"tipo\": \"TIPO_2\",\n          \"potencia_kw\": 7,\n          \"quantidade\": 1,\n          \"disponiveis\": null\n        }\n      ],\n      \"preco\": null,\n      \"horario\": null,\n      \"pagamento\": null,\n      \"fonte\": {\n        \"origem\": \"open_charge_map\",\n        \"provedor\": \"Easy Volt\",\n        \"licenca\": \"CC0\",\n        \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Easy Volt\\\" via Open Charge Map.\",\n        \"data\": \"2026-11-12T14:49:46.836Z\"\n      },\n      \"verificacao\": {\n        \"situacao\": \"nao_verificado\"\n      }\n    },\n    {\n      \"id\": \"ocm-514205\",\n      \"nome\": \"VoltchZ_Arena Sunset\",\n      \"endereco\": \"Rua Santa Ana, 200, São José dos Campos\",\n      \"localizacao\": {\n        \"lat\": -23.211884,\n        \"lng\": -45.889717\n      },\n      \"situacao\": \"fora_de_operacao\",\n      \"conectores\": [\n        {\n          \"tipo\": \"TIPO_2\",\n          \"potencia_kw\": 7,\n          \"quantidade\": 1,\n          \"disponiveis\": null\n        }\n      ],\n      \"preco\": null,\n      \"horario\": null,\n      \"pagamento\": null,\n      \"fonte\": {\n        \"origem\": \"open_charge_map\",\n        \"provedor\": \"Spott\",\n        \"licenca\": \"CC0\",\n        \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Spott\\\" via Open Charge Map.\",\n        \"data\": \"2026-11-12T14:49:46.836Z\"\n      },\n      \"verificacao\": {\n        \"situacao\": \"nao_verificado\"\n      }\n    }\n  ]\n}"
-        }
-      ]
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/openapi.json"
+      }
     },
     {
-      "name": "Detalhe do eletroposto",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{base_url}}/eletropostos/:id",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "eletropostos",
-            ":id"
-          ],
-          "variable": [
-            {
-              "key": "id",
-              "value": "ocm-481262",
-              "description": "Um `id` da lista: `ocm-…`, `propria-…` ou `google-…`."
-            }
-          ]
-        },
-        "description": "Detalhe de um eletroposto, no mesmo formato de cada item da lista.\n\n**Custo:** com `ocm-…` ou `propria-…`, o detalhe vem da base e não tem custo. Com `google-…`, a API busca a ficha no Google na hora, e a consulta é paga, com 1.000 gratuitas por mês e dentro do teto de US$ 50. A ficha é traduzida para o formato do REVOLT e não é gravada."
-      },
+      "name": "Mapa no zoom alto: postos um a um",
       "event": [
         {
           "listen": "test",
@@ -151,67 +36,161 @@
               "pm.test('Status 200', () => pm.response.to.have.status(200));",
               "const r = pm.response.json();",
               "",
-              "const SITUACOES = ['operacional', 'fora_de_operacao', 'planejado', 'fechado_definitivamente', 'desconhecida'];",
-              "const TIPOS = ['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO'];",
-              "function confere(e) {",
-              "  pm.expect(e, e.id).to.have.all.keys('id', 'nome', 'endereco', 'localizacao', 'situacao', 'conectores', 'preco', 'horario', 'pagamento', 'fonte', 'verificacao');",
-              "  pm.expect(e.id).to.match(/^(ocm|propria|google)-/);",
-              "  pm.expect(e.localizacao.lat, e.id).to.be.a('number');",
-              "  pm.expect(e.localizacao.lng, e.id).to.be.a('number');",
-              "  pm.expect(e.situacao, e.id).to.be.oneOf(SITUACOES);",
-              "  for (const c of e.conectores || []) pm.expect(c.tipo, e.id).to.be.oneOf(TIPOS);",
-              "  pm.expect(e.fonte.origem, e.id).to.be.oneOf(['open_charge_map', 'verificacao_propria', 'google']);",
-              "  pm.expect(e.fonte.licenca, e.id).to.be.a('string').and.not.empty;",
-              "  pm.expect(e.fonte.condicoes_uso, e.id).to.be.a('string').and.not.empty;",
-              "  pm.expect(e.verificacao.situacao, e.id).to.be.oneOf(['verificado', 'nao_verificado']);",
-              "}",
-              "pm.test('Nenhum campo cru do OCM ou do Google', () => {",
-              "  const texto = pm.response.text();",
-              "  for (const campo of ['Connections', 'ConnectionType', 'StatusType', 'AddressInfo', 'DataProvider', 'displayName', 'formattedAddress', 'evChargeOptions', 'businessStatus', 'place_id', 'EV_CONNECTOR_TYPE', 'paymentOptions']) pm.expect(texto).to.not.include(campo);",
-              "});",
-              "pm.test('É o eletroposto pedido', () => pm.expect(r.id).to.eql(decodeURIComponent(pm.request.url.getPath().split('/').pop())));",
-              "pm.test('No formato do REVOLT', () => confere(r));"
+              "pm.test('Sem grupos no zoom alto', () => pm.expect(r.grupos).to.eql([]));",
+              "pm.test('Há postos em São José dos Campos', () => pm.expect(r.pinos).to.not.be.empty);",
+              "const ocm = r.pinos.find((p) => p.origem === 'open_charge_map');",
+              "if (ocm) pm.collectionVariables.set('ocm_id', ocm.id);",
+              "pm.test('Lugares do Google só com as condições do Google', () => {",
+              "  for (const p of r.pinos.filter((x) => x.origem === 'google')) pm.expect(p.condicoes_de_uso.exibicao, p.id).to.eql('somente_sobre_mapa_google');",
+              "});"
             ]
           }
         }
       ],
-      "response": [
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/mapa?bbox=-45.92,-23.23,-45.84,-23.15&zoom=14"
+      }
+    },
+    {
+      "name": "Mapa do Brasil no zoom 4: grupos com contagem, sem o Google",
+      "event": [
         {
-          "name": "Exemplo: ocm-481262",
-          "originalRequest": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/eletropostos/:id",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "eletropostos",
-                ":id"
-              ],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ocm-481262",
-                  "description": "Um `id` da lista: `ocm-…`, `propria-…` ou `google-…`."
-                }
-              ]
-            },
-            "description": "Detalhe de um eletroposto, no mesmo formato de cada item da lista.\n\n**Custo:** com `ocm-…` ou `propria-…`, o detalhe vem da base e não tem custo. Com `google-…`, a API busca a ficha no Google na hora, e a consulta é paga, com 1.000 gratuitas por mês e dentro do teto de US$ 50. A ficha é traduzida para o formato do REVOLT e não é gravada."
-          },
-          "status": "OK",
-          "code": 200,
-          "_postman_previewlanguage": "json",
-          "header": [
-            {
-              "key": "Content-Type",
-              "value": "application/json; charset=utf-8"
-            }
-          ],
-          "body": "{\n  \"id\": \"ocm-481262\",\n  \"nome\": \"Volvo - Faberge SJC\",\n  \"endereco\": \"Avenida Doutor Eduardo Cury, 350, Jardim da Colinas, São José dos Campos, SP, São José dos Campos\",\n  \"localizacao\": {\n    \"lat\": -23.200982,\n    \"lng\": -45.909631\n  },\n  \"situacao\": \"fora_de_operacao\",\n  \"conectores\": [\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 7,\n      \"quantidade\": 1,\n      \"disponiveis\": null\n    }\n  ],\n  \"preco\": null,\n  \"horario\": null,\n  \"pagamento\": null,\n  \"fonte\": {\n    \"origem\": \"open_charge_map\",\n    \"provedor\": \"Easy Volt\",\n    \"licenca\": \"CC0\",\n    \"condicoes_uso\": \"Domínio público (CC0). Crédito recomendado: \\\"Easy Volt\\\" via Open Charge Map.\",\n    \"data\": \"2026-11-12T14:49:46.836Z\"\n  },\n  \"verificacao\": {\n    \"situacao\": \"nao_verificado\"\n  }\n}"
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "",
+              "pm.test('Há grupos', () => pm.expect(r.grupos).to.not.be.empty);",
+              "pm.test('Nenhum lugar do Google no zoom baixo', () => pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]));",
+              "pm.test('Resposta pequena (RNF-04)', () => pm.expect(pm.response.size().body).to.be.below(200000));"
+            ]
+          }
         }
-      ]
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/mapa?bbox=-74,-34,-34,5.3&zoom=4"
+      }
+    },
+    {
+      "name": "Mapa com filtro de conector: ocultos contados por motivo",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "",
+              "pm.test('Só postos com CCS2', () => { for (const p of r.pinos) pm.expect(p.conectores, p.id).to.include('CCS2'); });",
+              "pm.test('Com filtro, nenhum lugar do Google, só o aviso sem número (RN08)', () => {",
+              "  pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]);",
+              "  pm.expect(r.ocultos.sem_contagem.motivo).to.be.oneOf(['filtro', null]);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/mapa?bbox=-45.92,-23.23,-45.84,-23.15&zoom=14&conectores=CCS2"
+      }
+    },
+    {
+      "name": "Ficha de um posto do OCM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const r = pm.response.json();",
+              "pm.test('Ficha do posto escolhido no mapa', () => pm.expect(r.id).to.eql(pm.collectionVariables.get('ocm_id')));",
+              "pm.test('Atribuição ao provedor via Open Charge Map', () => pm.expect(r.condicoes_de_uso.atribuicao).to.include('Open Charge Map'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/eletropostos/{{ocm_id}}"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "openapi",
+      "value": ""
+    },
+    {
+      "key": "ocm_id",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Conferência de contrato: toda resposta da /v1 é comparada com a especificação OpenAPI que a própria API gera",
+          "// (guardada pelo primeiro pedido da pasta 0). Campo a mais, campo a menos ou tipo errado reprova.",
+          "const caminho = pm.request.url.getPath();",
+          "if (caminho.startsWith('/v1/') && caminho !== '/v1/openapi.json') {",
+          "  const textoDoc = pm.collectionVariables.get('openapi');",
+          "  pm.test('Contrato: especificação OpenAPI carregada', () => pm.expect(textoDoc, 'rode a coleção desde a pasta 0').to.be.ok);",
+          "  if (textoDoc) {",
+          "    const doc = JSON.parse(textoDoc);",
+          "    const metodo = pm.request.method.toLowerCase();",
+          "    const rota = Object.keys(doc.paths).find((p) => new RegExp('^' + p.replace(/\\{[^}]+\\}/g, '[^/]+') + '$').test(caminho));",
+          "    const resposta = rota && doc.paths[rota][metodo] && doc.paths[rota][metodo].responses[String(pm.response.code)];",
+          "    pm.test(`Contrato: ${metodo.toUpperCase()} ${rota} documenta o status ${pm.response.code}`, () => pm.expect(resposta).to.be.an('object'));",
+          "",
+          "    // OpenAPI 3.0 -> JSON Schema: \"nullable\" vira \"aceita null\" e todo objeto com propriedades fecha a porta a campos extras.",
+          "    const converter = (s) => {",
+          "      if (Array.isArray(s)) return s.map(converter);",
+          "      if (!s || typeof s !== 'object') return s;",
+          "      const r = {};",
+          "      for (const [k, v] of Object.entries(s)) {",
+          "        if (k === 'properties') r.properties = Object.fromEntries(Object.entries(v).map(([nome, p]) => [nome, converter(p)]));",
+          "        else if (!['nullable', 'example', 'description'].includes(k)) r[k] = converter(v);",
+          "      }",
+          "      if (r.properties && r.additionalProperties === undefined) r.additionalProperties = false;",
+          "      return s.nullable ? { anyOf: [{ type: 'null' }, r] } : r;",
+          "    };",
+          "    const esquema = resposta && resposta.content && resposta.content['application/json'] && resposta.content['application/json'].schema;",
+          "    if (esquema) {",
+          "      const schemas = {};",
+          "      for (const [nome, s] of Object.entries(doc.components.schemas)) schemas[nome] = converter(s);",
+          "      pm.test('Contrato: corpo bate com o esquema da especificação', () => pm.response.to.have.jsonSchema({ allOf: [converter(esquema)], components: { schemas } }));",
+          "    }",
+          "",
+          "    const corpo = pm.response.json();",
+          "    const quatro = ['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso'];",
+          "    if (rota === '/v1/mapa' && pm.response.code === 200)",
+          "      pm.test('RNF-01: todo pino traz origem, verificação, data e condições de uso', () => {",
+          "        for (const p of corpo.pinos) for (const k of quatro) pm.expect(p[k], `${p.id}.${k}`).to.not.equal(undefined);",
+          "      });",
+          "    if (rota === '/v1/eletropostos/{id}' && pm.response.code === 200)",
+          "      pm.test('RNF-01: a ficha traz origem, verificação, data e condições de uso, e cada atributo informado tem origem e data', () => {",
+          "        for (const k of quatro) pm.expect(corpo[k], k).to.not.equal(undefined);",
+          "        for (const [nome, a] of Object.entries(corpo.atributos)) if (a.valor !== null) pm.expect([a.origem, a.data], nome).to.not.include(null);",
+          "      });",
+          "    pm.test('Vocabulário do REVOLT: nenhum campo com o nome de uma fonte', () =>",
+          "      pm.expect(pm.response.text()).to.not.match(/\"(AddressInfo|DataProvider\\w*|Connections|ConnectionType|StatusType|UsageType|UsageCost|displayName|formattedAddress|evChargeOptions|businessStatus|googleMapsUri|place_id|dados)\"\\s*:/));",
+          "  }",
+          "}"
+        ]
+      }
     }
   ]
 }

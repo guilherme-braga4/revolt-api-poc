@@ -4,7 +4,7 @@ import {
   IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested,
 } from 'class-validator';
 import { Db } from './db.js';
-import { LICENCA_PROPRIA, TIPOS_CONECTOR } from './eletropostos.js';
+import { LICENCA_PROPRIA, TIPOS_CONECTOR } from './vocabulario.js';
 
 class Localizacao {
   @IsLatitude() lat: number;
