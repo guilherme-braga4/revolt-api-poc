@@ -112,6 +112,8 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
+**Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.
+
 ### Autenticação (D-04 e D-09)
 
 A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a chave publicada, o emissor e o público.
@@ -202,6 +204,8 @@ Exemplos de corpo estão na coleção do Postman.
 
 A coleção do Postman cobre os critérios de aceite do PRD de obtenção (RF01 a RF10 e a regra dos 100 m do RF18), inclusive os casos negativos, e o contrato `/v1`: filtros e contagem de ocultos, grupos, motivos de mapa vazio, atestado, trava contra robô e conta. Ela roda contra uma API de teste na porta 3334 e um servidor de apoio na porta 4010 (`teste/apoio.mjs`). O servidor de apoio faz o papel do OCM, do Google, do login gerenciado e do atestado do app. **Nenhum teste chama o OCM ou o Google reais.**
 
+A API de teste fala com o banco por um proxy do servidor de apoio (porta 4011, em `DATABASE_URL`); o apoio fala direto (`BANCO_DIRETO_URL`). Com isso, a seção 10 da coleção simula quedas do banco: conexões derrubadas pelo Postgres, consulta lenta, conexões meio abertas que nunca respondem e mais pedidos simultâneos que o pool. Ela confere que cada pedido falha com 503 dentro do prazo e que o seguinte volta a responder sem reiniciar a API. No fim, a atualização do OCM espera uma trava de 7 s na tabela `ocm_posto` e precisa terminar: as tarefas longas não ficam presas ao prazo dos pedidos.
+
 Toda resposta da `/v1` passa por um script da coleção que a compara com a especificação OpenAPI servida pela API: campo a mais, campo a menos ou tipo errado reprova. Todo pino e toda ficha também precisam trazer `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso` (RNF-01).
 
 **Pelo Newman, de uma vez:**
@@ -214,7 +218,7 @@ O script sobe o banco (se ainda não estiver no ar), a API de teste e o apoio, c
 
 **Pelo Postman:**
 
-1. Em dois terminais, rode `npm run apoio` e `npm run start:teste`.
+1. Em dois terminais, rode `npm run apoio` e, depois que ele subir, `npm run start:teste`.
 2. Leve a coleção e o environment da pasta `postman/` para o Postman de um destes jeitos:
    - importando os arquivos;
    - com `npm run postman:sync`, que envia para a sua conta todas as coleções e todos os environments da pasta (precisa de `POSTMAN_API_KEY` no `.env`).

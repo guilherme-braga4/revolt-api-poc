@@ -66,9 +66,9 @@ export class ControleController {
     await this.mudarFonte(nome, { ligada: false, autor: b.autor });
     const apagados =
       nome === 'ocm'
-        ? (await this.db.query('DELETE FROM ocm_posto RETURNING ocm_id')).length
-        : (await this.db.query('DELETE FROM google_lugar RETURNING place_id')).length;
-    if (nome === 'google') await this.db.query('DELETE FROM google_celula');
+        ? (await this.db.tarefa('DELETE FROM ocm_posto RETURNING ocm_id')).length
+        : (await this.db.tarefa('DELETE FROM google_lugar RETURNING place_id')).length;
+    if (nome === 'google') await this.db.tarefa('DELETE FROM google_celula');
     return { fonte: nome, ligada: false, apagados };
   }
 
@@ -86,7 +86,7 @@ export class ControleController {
   @HttpCode(200)
   async excluirProvedor(@Param('id', ParseIntPipe) id: number, @Body() b: Autor) {
     await this.mudarProvedor(id, { ligado: false, autor: b.autor });
-    const apagados = await this.db.query('DELETE FROM ocm_posto WHERE provedor_id = $1 RETURNING ocm_id', [id]);
+    const apagados = await this.db.tarefa('DELETE FROM ocm_posto WHERE provedor_id = $1 RETURNING ocm_id', [id]);
     return { provedor_id: id, ligado: false, apagados: apagados.length };
   }
 }

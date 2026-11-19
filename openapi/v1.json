@@ -103,6 +103,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Base de dados fora do ar (erro base_indisponivel). O app tenta de novo depois.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
           }
         },
         "summary": "Postos da janela visível do mapa",
@@ -197,11 +207,18 @@
             }
           },
           "503": {
-            "description": "Ficha do Google indisponível: teto atingido, camada desligada ou Google fora do ar.",
+            "description": "Ficha do Google indisponível (teto atingido, camada desligada, Google fora do ar ou base fora do ar), com link_externo; ou, nas outras origens, base de dados fora do ar (erro base_indisponivel).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FichaIndisponivel"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FichaIndisponivel"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Erro"
+                    }
+                  ]
                 }
               }
             }
@@ -1296,7 +1313,8 @@
               "fora_do_ar",
               "sem_chave",
               "erro_da_fonte",
-              "ritmo_de_robo"
+              "ritmo_de_robo",
+              "base_indisponivel"
             ]
           },
           "mensagem": {

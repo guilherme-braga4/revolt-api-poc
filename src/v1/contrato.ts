@@ -246,7 +246,7 @@ export class Erro {
 }
 
 export class FichaIndisponivel {
-  @ApiProperty({ enum: ['teto_atingido', 'desligada', 'fora_do_ar', 'sem_chave', 'erro_da_fonte', 'ritmo_de_robo'] }) erro: string;
+  @ApiProperty({ enum: ['teto_atingido', 'desligada', 'fora_do_ar', 'sem_chave', 'erro_da_fonte', 'ritmo_de_robo', 'base_indisponivel'] }) erro: string;
   @ApiProperty() mensagem: string;
   @ApiProperty({ type: String, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga (RN20 do app).' }) link_externo: string;
 }

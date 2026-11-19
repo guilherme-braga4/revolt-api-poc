@@ -1,7 +1,7 @@
 // GET /v1/mapa: pinos por janela do mapa, com agrupamento por grade no PostGIS e contagem de ocultos (fluxo core).
 // UC01, RF01 a RF03 e RN03 a RN08 do app; D-03 da arquitetura; UC02, RN17, RN18 e RN21 da obtenção.
 import { BadRequestException, Controller, Get, Query, Req, UseFilters } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiHeader, ApiOkResponse, ApiOperation, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { Db } from '../db.js';
 import { NAO_VERIFICADO, SITUACAO_POR_FUNCIONAMENTO, TIPOS_RAPIDA, condicoesDeUso, diaEmBrasilia } from '../vocabulario.js';
 import { Acesso, ErrosV1 } from './acesso.js';
@@ -137,6 +137,7 @@ export class MapaController {
   @ApiHeader({ name: 'X-Atestado-App', required: false, description: 'Token do atestado do app (D-09). Sem ele, a resposta não traz dados do Google.' })
   @ApiOkResponse({ type: RespostaMapa })
   @ApiBadRequestResponse({ type: Erro })
+  @ApiServiceUnavailableResponse({ type: Erro, description: 'Base de dados fora do ar (erro base_indisponivel). O app tenta de novo depois.' })
   async mapa(@Query() q: PedidoMapa, @Req() req) {
     // Nos zooms baixos a janela do mapa pode passar dos limites do mundo: recorta em vez de recusar.
     const recorte = (v: number, limite: number) => Math.max(-limite, Math.min(limite, v));

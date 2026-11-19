@@ -108,7 +108,7 @@ export class GoogleService {
     const regiao = readFileSync(new URL(`../${REGIAO}`, import.meta.url), 'utf8');
     // Na primeira vez, cria a grade de células que tocam a região (o contorno do Brasil do IBGE). O contorno é simplificado
     // e corta trechos do litoral (Copacabana fica 10 km fora dele): a folga de 0,1° (~11 km) evita perder essas células.
-    await this.db.query(
+    await this.db.tarefa(
       `INSERT INTO google_celula (lat_min, lng_min, tam)
        SELECT round(i * t, 6), round(j * t, 6), t
        FROM (SELECT ST_Buffer(ST_GeomFromGeoJSON($1), 0.1) AS g, $2::numeric AS t) r,
@@ -200,7 +200,7 @@ export class GoogleService {
   // RF06: apaga coordenadas com mais de 30 dias e mantém o identificador.
   @Cron('0 4 * * *')
   async expirar() {
-    const apagadas = await this.db.query(
+    const apagadas = await this.db.tarefa(
       `UPDATE google_lugar SET local = NULL, coordenada_obtida_em = NULL
        WHERE coordenada_obtida_em < now() - interval '30 days' RETURNING place_id`,
     );

@@ -60,6 +60,10 @@
     {
       "key": "p_desconhecido",
       "value": ""
+    },
+    {
+      "key": "pedidos_mudo",
+      "value": ""
     }
   ],
   "item": [
@@ -4244,6 +4248,416 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/postos-proprios/{{posto_novo_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 · Queda da conexão com o banco (incidente de 15/11/2026)",
+      "item": [
+        {
+          "name": "Mapa responde antes da queda",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Traz o posto 9001', () => pm.expect(pm.response.json().pinos.map((p) => p.id)).to.include('ocm-9001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Derrubar as conexões da API com o banco (pg_terminate_backend)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Derrubou ao menos a conexão aberta pelo pedido anterior', () => pm.expect(pm.response.json().derrubadas).to.be.at.least(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/banco/derrubar"
+          }
+        },
+        {
+          "name": "Logo depois da queda, o mapa responde sem reiniciar a API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Traz o posto 9001', () => pm.expect(pm.response.json().pinos.map((p) => p.id)).to.include('ocm-9001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Preparar: tabela ocm_posto travada (consulta lenta)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/banco/travar"
+          }
+        },
+        {
+          "name": "Consulta lenta: o mapa falha dentro do prazo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Erro base_indisponivel, no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('base_indisponivel'));",
+                  "pm.test('Falha dentro do prazo, sem ficar pendurado', () => pm.expect(pm.response.responseTime).to.be.below(7000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Destravar a tabela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/banco/destravar"
+          }
+        },
+        {
+          "name": "Depois da consulta lenta, o mapa volta a responder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Banco mudo: conexões meio abertas, que nunca respondem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/banco",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"mudo\"}"
+            }
+          }
+        },
+        {
+          "name": "Banco mudo: o mapa falha dentro do prazo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Erro base_indisponivel, no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('base_indisponivel'));",
+                  "pm.test('Falha dentro do prazo, sem ficar pendurado', () => pm.expect(pm.response.responseTime).to.be.below(8500));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Banco mudo: 12 pedidos ao mesmo tempo não prendem o pool",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Mais pedidos que as 10 conexões do pool, todos ao mesmo tempo: foi assim que o pool encheu no incidente.",
+                  "const resultados = [];",
+                  "for (let i = 0; i < 12; i++) {",
+                  "  const inicio = Date.now();",
+                  "  pm.sendRequest(pm.variables.get('base_url') + '/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14', (erro, r) => {",
+                  "    resultados.push({ status: r ? r.code : null, erro: r ? r.json().erro : String(erro), ms: Date.now() - inicio });",
+                  "    if (resultados.length === 12) pm.collectionVariables.set('pedidos_mudo', JSON.stringify(resultados));",
+                  "  });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Erro base_indisponivel, no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('base_indisponivel'));",
+                  "pm.test('Falha dentro do prazo, sem ficar pendurado', () => pm.expect(pm.response.responseTime).to.be.below(8500));",
+                  "",
+                  "const resultados = JSON.parse(pm.collectionVariables.get('pedidos_mudo'));",
+                  "pm.test('Os 12 pedidos simultâneos falharam com 503 base_indisponivel', () => {",
+                  "  pm.expect(resultados).to.have.length(12);",
+                  "  for (const r of resultados) pm.expect([r.status, r.erro]).to.eql([503, 'base_indisponivel']);",
+                  "});",
+                  "pm.test('Nenhum dos 12 passou do prazo', () => pm.expect(Math.max(...resultados.map((r) => r.ms))).to.be.below(8500));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Banco mudo: a ficha do Google ainda oferece o Google Maps",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Erro base_indisponivel, no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('base_indisponivel'));",
+                  "pm.test('Falha dentro do prazo, sem ficar pendurado', () => pm.expect(pm.response.responseTime).to.be.below(8500));",
+                  "",
+                  "pm.test('Com link para o Google Maps', () => pm.expect(pm.response.json().link_externo).to.include('query_place_id=dubleA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleA"
+          }
+        },
+        {
+          "name": "Banco mudo: a ficha de um posto do OCM falha dentro do prazo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));",
+                  "pm.test('Erro base_indisponivel, no formato da /v1', () => pm.expect(pm.response.json().erro).to.eql('base_indisponivel'));",
+                  "pm.test('Falha dentro do prazo, sem ficar pendurado', () => pm.expect(pm.response.responseTime).to.be.below(8500));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9001"
+          }
+        },
+        {
+          "name": "Banco de volta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/banco",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"normal\"}"
+            }
+          }
+        },
+        {
+          "name": "Com o banco de volta, o mapa responde sem reiniciar a API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Traz o posto 9001', () => pm.expect(pm.response.json().pinos.map((p) => p.id)).to.include('ocm-9001'));",
+                  "pm.test('Responde sem esperar o prazo de conexão: nenhum pedido ficou preso no pool', () => pm.expect(pm.response.responseTime).to.be.below(5000));",
+                  "pm.sendRequest(pm.variables.get('base_url') + '/v1/eletropostos/ocm-9001', (e, r) => pm.test('A ficha também volta', () => pm.expect(r.code).to.eql(200)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Preparar: dublê do OCM com a lista v1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"modo\": \"v1\"}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: tabela ocm_posto travada por 7 s",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/banco/travar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"segundos\": 7}"
+            }
+          }
+        },
+        {
+          "name": "Tarefa longa: a atualização do OCM espera mais que o prazo dos pedidos e termina",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "// A troca da cópia espera a trava de 7 s, mais que o prazo dos pedidos (BANCO_TEMPO_LIMITE_MS=5000 no .env.teste).",
+                  "// Com o prazo dos pedidos, o Postgres cancelaria a consulta e a atualização falharia (502).",
+                  "pm.test('Atualização terminou com sucesso', () => pm.expect(pm.response.json().resultado).to.eql('ok'));",
+                  "pm.test('Passou bem do prazo dos pedidos sem ser cancelada (a trava dura 7 s)', () => pm.expect(pm.response.responseTime).to.be.above(6000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
           }
         }
       ]

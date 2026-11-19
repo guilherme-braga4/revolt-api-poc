@@ -8,11 +8,12 @@ cd "$(dirname "$0")/.."
 # Banco já no ar (ex.: subido por outra cópia do repositório)? Usa ele.
 docker inspect -f '{{.State.Running}}' revolt-poc-db 2>/dev/null | grep -q true || docker compose up -d --wait
 npx tsc
+# O apoio sobe antes: a API de teste fala com o banco pelo proxy dele.
 node --env-file=.env.teste teste/apoio.mjs > /dev/null & APOIO=$!
+trap 'kill $APOIO ${API:-} 2>/dev/null' EXIT
+until curl -so /dev/null localhost:${APOIO_PORT:-4010}; do sleep 0.5; done
 node --env-file=.env.teste dist/main.js > /dev/null & API=$!
-trap 'kill $APOIO $API 2>/dev/null' EXIT
-
-until curl -so /dev/null localhost:${APOIO_PORT:-4010} && curl -so /dev/null localhost:${PORT:-3334}; do sleep 0.5; done
+until curl -so /dev/null localhost:${PORT:-3334}; do sleep 0.5; kill -0 $API 2>/dev/null || { echo "a API de teste não subiu"; exit 1; }; done
 
 # O contrato versionado precisa ser o que a API serve. Mudou o código da /v1? Rode "npm run openapi".
 curl -s localhost:${PORT:-3334}/v1/openapi.json > dist/openapi-servido.json

@@ -3,8 +3,9 @@
 import { BadRequestException, Controller, Get, HttpException, NotFoundException, Param, Req, UnauthorizedException, UseFilters } from '@nestjs/common';
 import {
   ApiBadRequestResponse, ApiHeader, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiResponse, ApiTags, ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
-import { Db } from '../db.js';
+import { BaseIndisponivel, Db } from '../db.js';
 import { GoogleService } from '../google.js';
 import { NAO_VERIFICADO, SITUACAO_POR_FUNCIONAMENTO, condicoesDeUso, diaEmBrasilia } from '../vocabulario.js';
 import { Acesso, ErrosV1 } from './acesso.js';
@@ -154,7 +155,13 @@ export class FichaController {
   @ApiUnauthorizedResponse({ type: Erro, description: 'Ficha de origem google sem atestado do app.' })
   @ApiNotFoundResponse({ type: Erro })
   @ApiResponse({ status: 429, type: FichaIndisponivel, description: 'Ritmo de robô: muitas fichas do Google pelo mesmo aparelho.' })
-  @ApiResponse({ status: 503, type: FichaIndisponivel, description: 'Ficha do Google indisponível: teto atingido, camada desligada ou Google fora do ar.' })
+  @ApiResponse({
+    status: 503,
+    description:
+      'Ficha do Google indisponível (teto atingido, camada desligada, Google fora do ar ou base fora do ar), com link_externo; ' +
+      'ou, nas outras origens, base de dados fora do ar (erro base_indisponivel).',
+    schema: { oneOf: [{ $ref: getSchemaPath(FichaIndisponivel) }, { $ref: getSchemaPath(Erro) }] },
+  })
   async ficha(@Param('id') id: string, @Req() req) {
     if (id.startsWith('google-')) return this.fichaGoogle(id.slice('google-'.length), req);
     if (!/^(ocm|propria)-\d+$/.test(id)) throw new BadRequestException('id precisa ser ocm-<n>, propria-<n> ou google-<identificador>');
@@ -178,6 +185,9 @@ export class FichaController {
     try {
       return fichaDoGoogle(placeId, await this.google.ficha(placeId));
     } catch (erro) {
+      // Base fora do ar: mesmo assim o app pode abrir o lugar no Google Maps.
+      if (erro instanceof BaseIndisponivel)
+        throw new HttpException({ ...(erro.getResponse() as object), link_externo: linkPublico(placeId) }, 503);
       if (!(erro instanceof HttpException)) throw erro;
       const motivo = (erro.getResponse() as any).motivo;
       if (erro.getStatus() === 404) throw new NotFoundException({ erro: motivo, mensagem: MENSAGENS[motivo] });
