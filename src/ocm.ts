@@ -63,8 +63,9 @@ export class OcmService {
           });
       }
 
-      // Troca atômica: a cópia nova só substitui a anterior se tudo der certo (RF02).
-      const cliente = await this.db.pool.connect();
+      // Troca atômica: a cópia nova só substitui a anterior se tudo der certo (RF02). Pool das tarefas: a base inteira
+      // passa por aqui e pode levar mais que o prazo dos pedidos.
+      const cliente = await this.db.poolTarefas.connect();
       try {
         await cliente.query('BEGIN');
         await cliente.query('CREATE TEMP TABLE novo (LIKE ocm_posto) ON COMMIT DROP');

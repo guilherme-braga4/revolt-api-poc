@@ -1,12 +1,19 @@
 // Servidor de apoio aos testes do Postman/Newman. Não chama nenhum serviço real.
 // 1) Dublês do Open Charge Map (/ocm/v3/poi) e do Google Places (/google/v1/...), com contagem de chamadas.
 // 2) Preparo e inspeção do banco de teste (/__apoio/...): reset, coordenadas antigas e busca de texto nas tabelas.
+// 3) Dublês do login gerenciado e do atestado do app (/__apoio/jwks e /__apoio/token), com chaves geradas ao subir.
+// 4) Proxy entre a API de teste e o Postgres (porta do DATABASE_URL), para simular quedas de conexão (/__apoio/banco...).
+import { generateKeyPairSync } from 'node:crypto';
 import http from 'node:http';
+import net from 'node:net';
+import { exportJWK, SignJWT } from 'jose';
 import pg from 'pg';
 
-const banco = new URL(process.env.DATABASE_URL).pathname.slice(1);
+// O apoio fala direto com o banco (BANCO_DIRETO_URL). A API fala pelo proxy do fim deste arquivo (DATABASE_URL).
+const direto = new URL(process.env.BANCO_DIRETO_URL);
+const banco = direto.pathname.slice(1);
 if (!banco.endsWith('_teste')) throw new Error(`o apoio só roda contra um banco *_teste, não contra "${banco}"`);
-const db = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const db = new pg.Pool({ connectionString: direto.href, application_name: 'apoio' });
 
 // ---------- Dublê do Open Charge Map ----------
 const CC_BY = { ID: 1, Title: 'Open Charge Map Contributors', IsOpenDataLicensed: true, License: 'Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)' };
@@ -61,17 +68,44 @@ const distanciaM = (a, b) => {
   const y = (b.lat - a.lat) * rad;
   return Math.sqrt(x * x + y * y) * 6371000;
 };
+// O dubleA informa disponibilidade com horário; os outros, não.
+const DISPONIBILIDADE = { dubleA: { availableCount: 1, outOfServiceCount: 0, availabilityLastUpdateTime: '2026-11-12T10:00:00Z' } };
 const ficha = (l) => ({
   id: l.id,
   displayName: { text: l.nome, languageCode: 'pt-BR' },
   formattedAddress: l.endereco,
   location: { latitude: l.lat, longitude: l.lng },
   businessStatus: 'OPERATIONAL',
-  currentOpeningHours: { openNow: true },
-  evChargeOptions: { connectorCount: 2, connectorAggregation: [{ type: 'EV_CONNECTOR_TYPE_CCS_COMBO_2', maxChargeRateKw: 60, count: 2 }] },
+  currentOpeningHours: { openNow: true, weekdayDescriptions: ['segunda-feira: Atendimento 24 horas'] },
+  evChargeOptions: {
+    connectorCount: 2,
+    connectorAggregation: [{ type: 'EV_CONNECTOR_TYPE_CCS_COMBO_2', maxChargeRateKw: 60, count: 2, ...DISPONIBILIDADE[l.id] }],
+  },
   paymentOptions: { acceptsCreditCards: true },
   googleMapsUri: `https://maps.google.com/?cid=${l.id}`,
 });
+
+// ---------- Dublês do login gerenciado e do atestado do app ----------
+// Uma chave publicada no JWKS e outra, desconhecida, para o teste de assinatura inválida.
+const chave = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const chaveDesconhecida = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const JWKS = { keys: [{ ...(await exportJWK(chave.publicKey)), kid: 'teste', alg: 'RS256', use: 'sig' }] };
+const EMISSORES = {
+  conta: [process.env.CONTA_EMISSOR, process.env.CONTA_PUBLICO],
+  atestado: [process.env.ATESTADO_EMISSOR, process.env.ATESTADO_PUBLICO],
+};
+async function token({ tipo = 'atestado', sub = 'pessoa-teste', expirado = false, publico, chave_desconhecida = false }) {
+  const [emissor, publicoPadrao] = EMISSORES[tipo];
+  const agora = Math.floor(Date.now() / 1000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: 'teste', typ: 'JWT' })
+    .setIssuer(emissor)
+    .setAudience(publico ?? publicoPadrao)
+    .setSubject(sub)
+    .setIssuedAt(agora - 120)
+    .setExpirationTime(expirado ? agora - 60 : agora + 3600)
+    .sign((chave_desconhecida ? chaveDesconhecida : chave).privateKey);
+}
 
 // ---------- Estado dos dublês ----------
 let estado;
@@ -87,6 +121,34 @@ async function lerCorpo(req) {
 }
 
 const json = (res, status, corpo) => res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(corpo));
+
+// ---------- Proxy do banco ----------
+// Modo "mudo": segura os bytes nos dois sentidos sem fechar nada. As conexões abertas ficam meio abertas para sempre, como no
+// incidente de 15/11/2026 (o Postgres já não tinha as conexões, mas a API seguia esperando resposta nelas). Conexão aberta
+// enquanto mudo também nunca responde. Voltar ao modo normal não ressuscita as conexões mortas.
+let bancoMudo = false;
+const conexoesBanco = new Set();
+let trava; // conexão do apoio que segura a tabela ocm_posto (/__apoio/banco/travar)
+async function destravar() {
+  const c = trava;
+  trava = undefined;
+  if (c) await c.query('ROLLBACK').finally(() => c.release());
+}
+net
+  .createServer((api) => {
+    const c = { api, pg: net.connect(Number(direto.port || 5432), direto.hostname), morta: bancoMudo };
+    conexoesBanco.add(c);
+    api.on('data', (d) => c.morta || c.pg.write(d));
+    c.pg.on('data', (d) => c.morta || api.write(d));
+    api.on('close', () => {
+      c.pg.destroy();
+      conexoesBanco.delete(c);
+    });
+    c.pg.on('close', () => c.morta || api.destroy());
+    api.on('error', () => {});
+    c.pg.on('error', () => {});
+  })
+  .listen(Number(new URL(process.env.DATABASE_URL).port));
 
 http
   .createServer((req, res) => tratar(req, res).catch((erro) => json(res, 500, { erro: String(erro.message ?? erro) })))
@@ -130,8 +192,21 @@ async function tratar(req, res) {
     return lugar ? json(res, 200, ficha(lugar)) : json(res, 404, { error: { code: 404, status: 'NOT_FOUND' } });
   }
 
+  if (rota === 'GET /__apoio/jwks') return json(res, 200, JWKS);
+  if (rota === 'POST /__apoio/token') return json(res, 200, { token: await token(await lerCorpo(req)) });
+  // Distância em metros entre um lugar do Google guardado e um posto do OCM, pela mesma conta do PostGIS da regra dos 100 m.
+  if (rota === 'GET /__apoio/distancia') {
+    const { rows } = await db.query(
+      'SELECT round(ST_Distance(g.local, o.local)::numeric, 1)::float8 AS metros FROM google_lugar g, ocm_posto o WHERE g.place_id = $1 AND o.ocm_id = $2',
+      [url.searchParams.get('place_id'), Number(url.searchParams.get('ocm_id'))],
+    );
+    return json(res, 200, rows[0] ?? { metros: null });
+  }
+
   if (rota === 'POST /__apoio/reset') {
     zerar();
+    bancoMudo = false;
+    await destravar();
     await db.query(`TRUNCATE ${TABELAS.filter((t) => !['fonte', 'teto_google'].includes(t)).join(', ')} RESTART IDENTITY CASCADE`);
     await db.query(`UPDATE fonte SET ligada = true, alterada_em = now(), alterada_por = 'reset do teste'`);
     await db.query(`UPDATE teto_google SET valor_usd = 50, alterado_em = now(), alterado_por = 'reset do teste'`);
@@ -144,6 +219,34 @@ async function tratar(req, res) {
   if (rota === 'POST /__apoio/google') {
     estado.google = (await lerCorpo(req)).modo;
     return json(res, 200, { google: estado.google });
+  }
+  // Quedas do banco, só nas conexões da API (as do apoio se chamam "apoio").
+  if (rota === 'POST /__apoio/banco') {
+    bancoMudo = (await lerCorpo(req)).modo === 'mudo';
+    if (bancoMudo) for (const c of conexoesBanco) c.morta = true;
+    return json(res, 200, { modo: bancoMudo ? 'mudo' : 'normal', conexoes: conexoesBanco.size });
+  }
+  // Como um reinício do Postgres: encerra as conexões da API e espera elas saírem.
+  if (rota === 'POST /__apoio/banco/derrubar') {
+    const { rows } = await db.query(
+      `SELECT count(*) FILTER (WHERE pg_terminate_backend(pid, 5000))::int AS derrubadas FROM pg_stat_activity
+       WHERE datname = current_database() AND pid <> pg_backend_pid() AND application_name <> 'apoio'`,
+    );
+    return json(res, 200, rows[0]);
+  }
+  // Consulta lenta: segura a tabela ocm_posto até o /destravar (ou {segundos}, padrão 30), e quem consulta a tabela espera.
+  if (rota === 'POST /__apoio/banco/travar') {
+    const { segundos = 30 } = await lerCorpo(req);
+    await destravar();
+    const c = (trava = await db.connect());
+    await c.query('BEGIN');
+    await c.query('LOCK TABLE ocm_posto IN ACCESS EXCLUSIVE MODE');
+    setTimeout(() => trava === c && destravar(), segundos * 1000);
+    return json(res, 200, { travada: 'ocm_posto' });
+  }
+  if (rota === 'POST /__apoio/banco/destravar') {
+    await destravar();
+    return json(res, 200, { travada: null });
   }
   if (rota === 'GET /__apoio/chamadas') return json(res, 200, { chamadas: estado.chamadas, mascaras: estado.mascaras, raio_max_m: estado.raio_max_m });
 
