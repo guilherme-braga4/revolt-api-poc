@@ -12536,6 +12536,141 @@
               "raw": "{\n  \"limite\": 100\n}"
             }
           }
+        },
+        {
+          "name": "Preparar: importar o OCM (São José dos Campos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Atualização terminou com sucesso', () => pm.expect(pm.response.json().resultado).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: varredura do Google disparada pelo Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: posto próprio Tipo 2 ao lado do lugar dubleA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.collectionVariables.set('posto_e_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.1862,\n    \"lng\": -45.8762\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 22,\n      \"quantidade\": 1\n    }\n  ],\n  \"funcionamento\": \"funcionando\",\n  \"acesso\": \"publico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mapa sem filtro numa área com postos das três origens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "const propria = 'propria-' + pm.collectionVariables.get('posto_e_id');",
+                  "pm.test('As três origens na área', () => pm.expect([...new Set(r.pinos.map((p) => p.origem))].sort()).to.eql(['google', 'open_charge_map', 'verificacao_propria']));",
+                  "pm.test('Contagem manual: dois do OCM, o próprio e dois lugares do Google', () =>",
+                  "  pm.expect(r.pinos.map((p) => p.id).sort()).to.eql(['google-dubleA', 'google-dubleB', 'ocm-9001', 'ocm-9002', propria].sort()));",
+                  "pm.test('Sem filtro, nada oculto', () => pm.expect([r.ocultos.total, r.ocultos.sem_contagem.ha_ocultos]).to.eql([0, false]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Filtro de conector com as três origens: compatíveis, ocultos por motivo e aviso do Google sem número (Alt. 1 do app)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Só o compatível aparece: o próprio Tipo 2', () => pm.expect(r.pinos.map((p) => p.id)).to.eql(['propria-' + pm.collectionVariables.get('posto_e_id')]));",
+                  "pm.test('Os dois do OCM entram na contagem de ocultos pelo conector (RN04 do app)', () => {",
+                  "  pm.expect(r.ocultos.total).to.eql(2);",
+                  "  pm.expect(r.ocultos.por_motivo).to.eql({ conector: 2, potencia: 0, rapida: 0, publico: 0, gratuito: 0 });",
+                  "});",
+                  "pm.test('Lugares do Google ocultos só com o aviso, sem número (RN08 do app)', () => {",
+                  "  pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]);",
+                  "  pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14&conectores=TIPO_2"
+          }
         }
       ]
     }
