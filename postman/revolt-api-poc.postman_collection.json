@@ -3188,7 +3188,7 @@
             "url": "{{base_url}}/verificacoes",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.736,\n    \"lng\": -45.124\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 150,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"restrito\",\n  \"preco\": \"R$ 2,50/kWh\"\n}"
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.736,\n    \"lng\": -45.124\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 150,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"restrito\",\n  \"preco\": \"R$ 2,50/kWh\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
             }
           }
         },
@@ -9987,6 +9987,276 @@
               "mode": "raw",
               "raw": "{\n  \"modo\": \"viagem\"\n}"
             }
+          }
+        },
+        {
+          "name": "Verificação com cada carregador e o tipo de restrição do acesso (D2, RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('d2_proprio', p.id);",
+                  "pm.test('Guarda cada carregador e a restrição', () => {",
+                  "  pm.expect(p.verificacoes[0].carregadores).to.eql([",
+                  "    { tipo: 'CCS2', funcionou: true, potencia_observada_kw: 47.5 },",
+                  "    { tipo: 'CCS2', funcionou: false, potencia_observada_kw: null },",
+                  "  ]);",
+                  "  pm.expect([p.verificacoes[0].acesso, p.verificacoes[0].acesso_restricao]).to.eql(['restrito', 'clientes_ou_hospedes']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha: se cada carregador funcionou e a potência observada, sem zero quando não houve recarga (RF04 do app)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const a = pm.response.json().atributos;",
+                  "pm.test('Carregadores da verificação em campo, com a data', () => pm.expect(a.carregadores).to.eql({",
+                  "  valor: [",
+                  "    { tipo: 'CCS2', funcionou: true, potencia_observada_kw: 47.5 },",
+                  "    { tipo: 'CCS2', funcionou: false, potencia_observada_kw: null },",
+                  "  ],",
+                  "  origem: 'verificacao_propria', data: '2026-11-18',",
+                  "}));",
+                  "pm.test('Acesso restrito com o tipo de restrição', () => pm.expect(a.acesso).to.eql({",
+                  "  valor: { tipo: 'restrito', restricao: 'clientes_ou_hospedes' }, origem: 'verificacao_propria', data: '2026-11-18',",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9101"
+          }
+        },
+        {
+          "name": "Recusa: acesso restrito sem o tipo de restrição (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso restrito exige acesso_restricao\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: tipo de restrição fora da lista (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso restrito exige acesso_restricao\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"vip\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: tipo de restrição com acesso público (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso_restricao só vale com acesso restrito\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"publico\",\n  \"acesso_restricao\": \"horario\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: carregador sem a potência observada (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"potencia_observada_kw\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: carregador sem dizer se funcionou (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"se funcionou\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: potência observada zero em vez de não observada (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"ou null quando não houve recarga\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": 0\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "As recusas não gravaram verificação",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só a verificação completa', () => pm.expect(pm.response.json().verificacoes.length).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/postos-proprios/{{d2_proprio}}"
           }
         }
       ]

@@ -28,6 +28,7 @@ const comContribuicoes = (ficha, linhas) => ({
   contribuicoes: linhas.map(({ foto_id, ...l }) => ({ origem: 'observacao_motorista', ...l, foto: caminhoDaFoto(foto_id) })),
 });
 const conector = (c) => ({ tipo: c.tipo, potencia_kw: c.potencia_kw ?? null, quantidade: c.quantidade ?? null });
+const carregador = (c) => ({ tipo: c.tipo, funcionou: c.funcionou, potencia_observada_kw: c.potencia_observada_kw });
 
 // Ficha de um posto do OCM ou próprio: cada atributo vem da verificação em campo vigente, se ela informou; senão, da
 // fonte do registro. Sempre com origem e data (RF04 do app).
@@ -37,7 +38,7 @@ function fichaDaBase(e) {
   const fonte = { origem: e.origem, data: e.origem === 'verificacao_propria' ? e.data_observacao : diaEmBrasilia(e.data_fonte) };
   const de = (observado, daFonte) =>
     verificacao && observado != null ? { valor: observado, ...verificacao } : daFonte != null ? { valor: daFonte, ...fonte } : NAO_INFORMADO;
-  const acesso = (tipo) => (tipo ? { tipo, restricao: null } : null);
+  const acesso = (tipo, restricao = null) => (tipo ? { tipo, restricao } : null);
 
   return {
     id: e.id,
@@ -52,14 +53,14 @@ function fichaDaBase(e) {
       situacao: de(SITUACAO_POR_FUNCIONAMENTO[e.funcionamento], e.situacao),
       conectores: de(e.conectores_observados?.map(conector), e.conectores?.length ? e.conectores.map(conector) : null),
       funcionamento: de(e.funcionamento, null),
-      carregadores: NAO_INFORMADO, // a verificação em campo ainda não registra cada carregador (RF07 da obtenção)
+      carregadores: de(e.carregadores_observados?.map(carregador), null),
       preco: de(e.preco_observado, e.preco),
       regras_cobranca: de(e.regras_cobranca, null),
       taxa_ociosidade: de(e.taxa_ociosidade, null),
       pre_autorizacao: de(e.pre_autorizacao, null),
       app_exigido: de(e.app_exigido, null),
       pagamento_sem_app: de(e.pagamento_sem_app, null),
-      acesso: de(acesso(e.acesso), acesso(e.acesso_fonte)),
+      acesso: de(acesso(e.acesso, e.acesso_restricao), acesso(e.acesso_fonte)),
       horario: NAO_INFORMADO,
       pagamento: NAO_INFORMADO,
       disponibilidade: NAO_INFORMADO, // nenhuma fonte aberta informa disponibilidade

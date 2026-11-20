@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS verificacao (
   pagamento_sem_app boolean,
   acesso text
 );
+-- Fase 4 (Alteração 2): cada carregador observado ({ tipo, funcionou, potencia_observada_kw }, com null quando não houve
+-- recarga) e o tipo de restrição do acesso restrito (RF07).
+ALTER TABLE verificacao ADD COLUMN IF NOT EXISTS carregadores jsonb;
+ALTER TABLE verificacao ADD COLUMN IF NOT EXISTS acesso_restricao text;
 
 -- Do Google só o identificador (sem prazo) e a coordenada com data (até 30 dias) (RN06, RN07).
 CREATE TABLE IF NOT EXISTS google_lugar (
@@ -213,7 +217,9 @@ SELECT 'ocm-' || o.ocm_id AS id,
        NULL::boolean AS duplicado_do_ocm,
        CASE WHEN o.dados->'UsageType'->>'Title' ILIKE 'public%' THEN 'publico'
             WHEN o.dados->'UsageType'->>'Title' ILIKE 'priv%' THEN 'restrito'
-       END AS acesso_fonte -- tipo de uso informado pelo OCM, no vocabulário do REVOLT
+       END AS acesso_fonte, -- tipo de uso informado pelo OCM, no vocabulário do REVOLT
+       u.carregadores AS carregadores_observados,
+       u.acesso_restricao
 FROM ocm_posto o
 LEFT JOIN ultima u ON u.ocm_id = o.ocm_id
 UNION ALL
@@ -254,7 +260,9 @@ SELECT 'propria-' || u.posto_proprio_id,
        u.ocm_id,
        u.local,
        NULL,
-       NULL
+       NULL,
+       u.carregadores,
+       u.acesso_restricao
 FROM ultima u
 WHERE u.ocm_id IS NULL OR NOT EXISTS (SELECT 1 FROM ocm_posto o WHERE o.ocm_id = u.ocm_id)
 UNION ALL
@@ -280,6 +288,8 @@ SELECT 'google-' || g.place_id,
        EXISTS (SELECT 1 FROM ocm_posto o
                WHERE ST_DWithin(o.local, g.local, 100) AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
                  AND o.provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado)),
+       NULL,
+       NULL,
        NULL
 FROM google_lugar g
 WHERE g.coordenada_obtida_em >= now() - interval '30 days';
