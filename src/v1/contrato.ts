@@ -2,7 +2,10 @@
 // de contrato (Newman) comparam cada resposta real com ela, recusando campo a mais ou a menos.
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDefined, IsIn, IsInt, IsNumber, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBase64, IsBoolean, IsDateString, IsDefined, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID,
+  Matches, Max, MaxLength, Min, ValidateNested,
+} from 'class-validator';
 import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR } from '../vocabulario.js';
 
 const DIA = { type: String, format: 'date', example: '2026-11-12' };
@@ -458,3 +461,42 @@ export class FichaIndisponivel {
   @ApiProperty() mensagem: string;
   @ApiProperty({ type: String, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga (RN20 do app).' }) link_externo: string;
 }
+
+// ---------- Contribuições (Fase 3) ----------
+
+// Identificador de um posto, como o mapa e a ficha entregam.
+export const ID_ELETROPOSTO = /^(ocm-\d+|propria-\d+|google-[A-Za-z0-9_-]{1,300})$/;
+const ID_ELETROPOSTO_DOC = { example: 'ocm-9001', pattern: ID_ELETROPOSTO.source, description: 'ocm-<n>, propria-<n> ou google-<identificador>.' };
+const FOTO_DOC = {
+  required: false,
+  format: 'byte',
+  description: 'JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos.',
+};
+
+// Check-in depois da recarga (UC05, RF08). Só o que o motorista observou: campo fora desta lista, como um dado do Google,
+// é recusado (RN13 do app).
+export class PedidoCheckin {
+  @ApiProperty({ format: 'uuid', description: 'Gerada pelo app para cada check-in. Reenviar com a mesma chave não duplica (fila sem conexão).' })
+  @IsUUID() chave: string;
+  @ApiProperty(ID_ELETROPOSTO_DOC) @Matches(ID_ELETROPOSTO) eletroposto_id: string;
+  @ApiProperty({ ...DIA, description: 'Dia da observação (horário de Brasília), não o do envio. Não pode ser no futuro.' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) data_observacao: string;
+  @ApiProperty({ description: 'O motorista carregou.' }) @IsBoolean() carregou: boolean;
+  @ApiProperty({ required: false, enum: TIPOS_CONECTOR, description: 'Conector usado.' }) @IsOptional() @IsIn(TIPOS_CONECTOR) conector?: string;
+  @ApiProperty({ required: false, description: 'O carregador funcionou.' }) @IsOptional() @IsBoolean() funcionou?: boolean;
+  @ApiProperty({ required: false, minimum: 0.1, maximum: 1000, description: 'Potência vista, em kW.' })
+  @IsOptional() @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0.1) @Max(1000) potencia_kw?: number;
+  @ApiProperty({ required: false, maxLength: 200, description: 'Preço visto, em texto livre.' }) @IsOptional() @IsString() @MaxLength(200) preco?: string;
+  @ApiProperty({ enum: ['sim', 'nao'], description: 'O posto estava como o app informou (métrica principal).' }) @IsIn(['sim', 'nao']) estava_como_informado: string;
+  @ApiProperty(FOTO_DOC) @IsOptional() @IsBase64() foto?: string;
+}
+
+export class CheckinRecebido {
+  @ApiProperty({ type: 'integer', description: 'Identificador da contribuição.' }) id: number;
+  @ApiProperty({ format: 'uuid' }) chave: string;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty(DIA) data_observacao: string;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto (GET /v1/fotos/{id}). null sem foto.' }) foto: string | null;
+  @ApiProperty({ format: 'date-time', description: 'Quando a API recebeu o check-in pela primeira vez.' }) recebido_em: string;
+}
+

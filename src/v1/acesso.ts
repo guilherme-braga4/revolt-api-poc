@@ -103,6 +103,20 @@ export class CuradorGuard extends ContaGuard {
   }
 }
 
+// Contribuir (check-in e reporte): conta não bloqueada pelo Curador (UC07 e UC08 do app).
+@Injectable()
+export class ContribuicaoGuard extends ContaGuard {
+  async canActivate(contexto: ExecutionContext) {
+    await super.canActivate(contexto);
+    if (contexto.switchToHttp().getRequest().conta.bloqueada_em)
+      throw new ForbiddenException({
+        erro: 'conta_bloqueada',
+        mensagem: 'Esta conta foi bloqueada pelo Curador e não pode mais contribuir. O app continua funcionando sem conta.',
+      });
+    return true;
+  }
+}
+
 const CODIGOS = { 400: 'pedido_invalido', 401: 'nao_autorizado', 403: 'proibido', 404: 'nao_encontrado', 429: 'muitos_pedidos' };
 
 // Todo erro da /v1 sai no mesmo formato: { erro, mensagem } e, na ficha do Google, link_externo.

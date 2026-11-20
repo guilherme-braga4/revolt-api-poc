@@ -322,3 +322,23 @@ CREATE TABLE IF NOT EXISTS observacao_recusada (
   recusada_em timestamptz NOT NULL DEFAULT now(),
   motivo text NOT NULL
 );
+
+-- Fotos de check-ins e reportes (RF08 e UC06 do app): JPEG recomprimido pela API, sem metadados. Identificador aleatório,
+-- para nenhuma foto ser achada por sequência. Removida pelo Curador, sai da base.
+CREATE TABLE IF NOT EXISTS foto (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  jpeg bytea NOT NULL,
+  criada_em timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE observacao ADD COLUMN IF NOT EXISTS foto_id uuid REFERENCES foto (id) ON DELETE SET NULL;
+
+-- Contribuições (módulo app): o elo entre a conta e o que ela enviou, para a moderação e para o check-in reenviado pela fila
+-- sem conexão não duplicar (chave gerada pelo app). Excluir a conta desliga o autor.
+CREATE TABLE IF NOT EXISTS contribuicao (
+  id serial PRIMARY KEY,
+  conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  chave uuid NOT NULL,
+  observacao_id integer NOT NULL REFERENCES observacao (id),
+  recebida_em timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (conta_id, chave)
+);

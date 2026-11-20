@@ -12,3 +12,13 @@ export function motivoDaRecusa(erros: ValidationError[], dataObservacao: unknown
   if (String(dataObservacao) > hoje) return 'data_futura';
   return null;
 }
+
+// O posto existe na base: cópia do OCM, registro próprio ou lugar do Google guardado (mesmo com a coordenada vencida, o
+// identificador fica). $1 identificador como o mapa e a ficha entregam.
+export const SQL_ELETROPOSTO_EXISTE = `
+  SELECT CASE
+    WHEN $1 ~ '^ocm-\\d+$' THEN EXISTS (SELECT 1 FROM ocm_posto WHERE ocm_id = substr($1, 5)::int)
+    WHEN $1 ~ '^propria-\\d+$' THEN EXISTS (SELECT 1 FROM posto_proprio WHERE id = substr($1, 9)::int)
+    WHEN $1 LIKE 'google-%' THEN EXISTS (SELECT 1 FROM google_lugar WHERE place_id = substr($1, 8))
+    ELSE false
+  END AS existe`;

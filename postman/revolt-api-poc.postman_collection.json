@@ -104,7 +104,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/conta', '/v1/eletropostos/{id}', '/v1/mapa', '/v1/viagens/planejar']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/viagens/planejar']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -6831,6 +6831,625 @@
               }
             ],
             "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "[sem conta] Check-in sem conta é recusado, com convite para entrar (RN12)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json()).to.eql({ erro: 'conta_necessaria', mensagem: 'Entre com uma conta para continuar.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in da motorista A, enviado depois de ficar sem conexão, com a data da observação (UC05)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('contrib_a1', r.id);",
+                  "pm.test('Recebido com a data da observação, não a do envio', () => {",
+                  "  pm.expect(r).to.include({ chave: '00000001-0000-4000-8000-000000000000', eletroposto_id: 'ocm-9105', data_observacao: '2026-11-15', foto: null });",
+                  "  pm.expect(new Date(r.recebido_em).getTime()).to.be.closeTo(Date.now(), 120000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reenvio da mesma chave pela fila sem conexão não duplica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Mesma contribuição', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('contrib_a1'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Uma observação só, com autor pseudônimo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const obs = pm.response.json();",
+                  "pm.test('O reenvio não criou outra observação', () => pm.expect(obs).to.have.length(1));",
+                  "pm.test('Autor é o pseudônimo da conta, não o identificador do login', () => {",
+                  "  pm.expect(obs[0].autor).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(JSON.stringify(obs)).to.not.include('motorista-a');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "Ficha vista por outra pessoa, sem conta: o check-in com a data e sem o autor (RN12, RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Confirmação de motorista com a data da observação', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-15' }));",
+                  "pm.test('O check-in não torna o posto verificado (RN15)', () => pm.expect(f.verificacao).to.eql({ situacao: 'nao_verificado', data: null }));",
+                  "pm.test('A contribuição traz o que o motorista viu, como observação de motorista', () => pm.expect(f.contribuicoes).to.eql([",
+                  "  { origem: 'observacao_motorista', data: '2026-11-15', carregou: true, conector: 'CCS2', funcionou: true, potencia_kw: 47.5,",
+                  "    preco: 'R$ 2,10/kWh', estava_como_informado: 'sim', foto: null, corrigida: false },",
+                  "]));",
+                  "pm.test('Sem nome, foto de perfil, veículo ou identificador do autor (RN12)', () => {",
+                  "  pm.expect(f.contribuicoes.every(semAutor)).to.eql(true);",
+                  "  pm.expect(pm.response.text()).to.not.include('motorista-a');",
+                  "});",
+                  "pm.test('Os atributos continuam vindo da fonte', () => pm.expect(f.atributos.preco.origem).to.not.eql('observacao_motorista'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "Mapa: o pino mostra a confirmação de motorista, à parte da verificação (RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json().pinos.find((p) => p.id === 'ocm-9105');",
+                  "pm.test('Confirmação de motorista com a data, sem virar verificado', () => {",
+                  "  pm.expect(p.confirmacao_motorista).to.eql({ data: '2026-11-15' });",
+                  "  pm.expect(p.verificacao.situacao).to.eql('nao_verificado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.118,-22.751,-45.098,-22.731&zoom=14"
+          }
+        },
+        {
+          "name": "Check-in num posto verificado: a verificação em campo continua a do Curador (RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000002-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"propria-1\",\n  \"data_observacao\": \"2026-11-19\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha do posto verificado: verificado em campo e, à parte, confirmado por motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Verificação e data da observação em campo, não do check-in', () => {",
+                  "  pm.expect(f.verificacao).to.eql({ situacao: 'verificado', data: '2026-11-18' });",
+                  "  pm.expect(f.atualizado_em).to.eql('2026-11-18');",
+                  "});",
+                  "pm.test('Confirmação de motorista com a data do check-in', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-19' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/propria-1"
+          }
+        },
+        {
+          "name": "Check-in do motorista B num lugar do Google, com foto (UC05, fluxo alternativo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.test('Foto recebida, com caminho próprio', () => pm.expect(r.foto).to.match(/^\\/v1\\/fotos\\/[0-9a-f-]{36}$/));",
+                  "pm.collectionVariables.set('foto_b', r.foto);",
+                  "pm.collectionVariables.set('contrib_b1', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000003-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"google-dubleViagem\",\n  \"data_observacao\": \"2026-11-20\",\n  \"carregou\": false,\n  \"estava_como_informado\": \"nao\",\n  \"foto\": \"/9j/4QEyRXhpZgAASUkqAAgAAAAJAA8BAgAOAAAAmAAAABIBAwABAAAAAQAAABoBBQABAAAAegAAABsBBQABAAAAggAAACgBAwABAAAAAgAAADEBAgANAAAAigAAABMCAwABAAAAAQAAAGmHBAABAAAApgAAACWIBAABAAAA9AAAAAAAAAA4YwAA6AMAADhjAADoAwAAQXV0b3JTZWNyZXRvAABDYW1lcmFEZVRlc3RlAAYAAJAHAAQAAAAwMjEwAZEHAAQAAAABAgMAAKAHAAQAAAAwMTAwAaADAAEAAAD//wAAAqAEAAEAAABAAAAAA6AEAAEAAAAwAAAAAAAAAAIAAQACAAIAAABTAAAAAgAFAAMAAAASAQAAAAAAABcAAAABAAAACwAAAAEAAAAAAAAAAQAAAP/bAEMACgcHCAcGCggICAsKCgsOGBAODQ0OHRUWERgjHyUkIh8iISYrNy8mKTQpISIwQTE0OTs+Pj4lLkRJQzxINz0+O//bAEMBCgsLDg0OHBAQHDsoIig7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O//AABEIADAAQAMBIgACEQEDEQH/xAAVAAEBAAAAAAAAAAAAAAAAAAAABf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJQCsSoAAAAAAAAAAAAAAAAAAAAAD//Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha do lugar do Google traz o check-in, sem dado do Google na contribuição (RN13)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Só o que o motorista informou', () => pm.expect(f.contribuicoes).to.eql([",
+                  "  { origem: 'observacao_motorista', data: '2026-11-20', carregou: false, conector: null, funcionou: null, potencia_kw: null, preco: null,",
+                  "    estava_como_informado: 'nao', foto: pm.collectionVariables.get('foto_b'), corrigida: false },",
+                  "]));",
+                  "pm.test('Confirmação de motorista e nenhum autor', () => {",
+                  "  pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-20' });",
+                  "  pm.expect(f.contribuicoes.every(semAutor)).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleViagem"
+          }
+        },
+        {
+          "name": "Nada da ficha do Google foi guardado com o check-in (RN13)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nome do lugar do Google em nenhuma tabela', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=Dublê do Trecho"
+          }
+        },
+        {
+          "name": "Observação no lugar do Google ligada só ao identificador dele",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const o = pm.response.json().find((o) => o.eletroposto_id === 'google-dubleViagem');",
+                  "pm.test('Só o identificador do lugar, sem coordenada nem dado do Google', () => {",
+                  "  pm.expect(Object.keys(o)).to.have.members(['id', 'eletroposto_id', 'autor', 'data_observacao', 'recebida_em', 'carregou', 'conector', 'funcionou',",
+                  "    'potencia_kw', 'preco', 'estava_como_informado', 'corrigida_em', 'removida_em', 'motivo_remocao', 'foto_id']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "Foto entregue sem EXIF, sem GPS e sem autor (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JPEG', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^image\\/jpeg/));",
+                  "const bytes = pm.response.stream.toString('latin1');",
+                  "pm.test('Começa como JPEG', () => pm.expect(bytes.charCodeAt(0)).to.eql(0xff));",
+                  "pm.test('Sem EXIF nem os dados da câmera e do autor', () => {",
+                  "  for (const t of ['Exif', 'AutorSecreto', 'CameraDeTeste']) pm.expect(bytes, t).to.not.include(t);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}{{foto_b}}"
+          }
+        },
+        {
+          "name": "Foto inexistente: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/fotos/00000000-0000-4000-8000-000000000000"
+          }
+        },
+        {
+          "name": "Check-in com campo copiado do Google é recusado (RN13, RF19 da obtenção)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Explica o motivo', () => pm.expect(pm.response.json().mensagem).to.include('campo fora da lista'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000004-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"nome\": \"Eletroposto Dublê do Trecho\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in sem data é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Falta a data', () => pm.expect(pm.response.json().mensagem).to.eql('Falta a data da observação.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000005-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in com data no futuro é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Data no futuro', () => pm.expect(pm.response.json().mensagem).to.eql('A data da observação não pode ser no futuro.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000006-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2999-12-31\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusas contadas por motivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Três recusas', () => pm.expect(pm.response.json().map((r) => r.motivo).sort()).to.eql(['campo_nao_aceito', 'data_futura', 'sem_data']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao_recusada"
+          }
+        },
+        {
+          "name": "Check-in em posto desconhecido: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000007-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-999999\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Foto com mais de 500 KB é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('foto_grande', '/9j/' + 'A'.repeat(700000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Foto inválida', () => pm.expect(pm.response.json()).to.eql({ erro: 'foto_invalida', mensagem: 'A foto passa de 500 KB.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000008-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"foto\": \"{{foto_grande}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Foto que não é JPEG é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Foto inválida', () => pm.expect(pm.response.json()).to.eql({ erro: 'foto_invalida', mensagem: 'A foto precisa ser JPEG.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000009-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"foto\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
+            }
           }
         }
       ]

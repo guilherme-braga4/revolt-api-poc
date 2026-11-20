@@ -10,6 +10,7 @@ import { GoogleService } from '../google.js';
 import { NAO_VERIFICADO, SITUACAO_POR_FUNCIONAMENTO, condicoesDeUso, diaEmBrasilia } from '../vocabulario.js';
 import { Acesso, ErrosV1 } from './acesso.js';
 import { Erro, Ficha, FichaIndisponivel } from './contrato.js';
+import { caminhoDaFoto } from './fotos.js';
 import { OCM_E_PROPRIOS_LIGADOS } from './mapa.js';
 
 const NAO_INFORMADO = { valor: null, origem: null, data: null };
@@ -18,13 +19,13 @@ const NAO_INFORMADO = { valor: null, origem: null, data: null };
 // removidas pelo Curador e nunca com o autor. Elas não mudam os atributos nem a verificação do posto.
 const SQL_CONTRIBUICOES = `
   SELECT data_observacao AS data, carregou, conector, funcionou, potencia_kw::float8 AS potencia_kw, preco, estava_como_informado,
-         corrigida_em IS NOT NULL AS corrigida
+         foto_id, corrigida_em IS NOT NULL AS corrigida
   FROM observacao WHERE eletroposto_id = $1 AND removida_em IS NULL
   ORDER BY data_observacao DESC, id DESC LIMIT 10`;
 const comContribuicoes = (ficha, linhas) => ({
   ...ficha,
   confirmacao_motorista: linhas.length ? { data: linhas[0].data } : null,
-  contribuicoes: linhas.map((l) => ({ origem: 'observacao_motorista', ...l, foto: null })),
+  contribuicoes: linhas.map(({ foto_id, ...l }) => ({ origem: 'observacao_motorista', ...l, foto: caminhoDaFoto(foto_id) })),
 });
 const conector = (c) => ({ tipo: c.tipo, potencia_kw: c.potencia_kw ?? null, quantidade: c.quantidade ?? null });
 

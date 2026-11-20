@@ -359,6 +359,148 @@
           "conta"
         ]
       }
+    },
+    "/v1/checkins": {
+      "post": {
+        "description": "Exige conta não bloqueada. Entra na ficha como observação de motorista, com a data e sem o autor, e nunca torna o posto verificado. O check-in guardado sem conexão vai depois, com a data da observação e a mesma chave: reenviar não duplica. Num lugar do Google, guarda só o identificador dele. Pedidos recusados por validação são contados para o Curador.",
+        "operationId": "CheckinsController_checkin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoCheckin"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Esta conta já enviou esta chave: nada foi duplicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinRecebido"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Check-in recebido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinRecebido"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pedido inválido (erro pedido_invalido) ou foto que não é JPEG de até 500 KB (erro foto_invalida).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria): o app convida a entrar e guarda o check-in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta bloqueada pelo Curador (erro conta_bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Posto desconhecido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check-in depois da recarga",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/fotos/{id}": {
+      "get": {
+        "description": "JPEG recomprimido pela API, sem metadados e sem autor. Sai da base quando o Curador remove.",
+        "operationId": "FotosController_foto",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A foto.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Foto inexistente ou removida pelo Curador.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Foto de um check-in ou reporte",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
     }
   },
   "info": {
@@ -1956,6 +2098,123 @@
           "id",
           "papel",
           "bloqueada"
+        ]
+      },
+      "PedidoCheckin": {
+        "type": "object",
+        "properties": {
+          "chave": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Gerada pelo app para cada check-in. Reenviar com a mesma chave não duplica (fila sem conexão)."
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "ocm-<n>, propria-<n> ou google-<identificador>."
+          },
+          "data_observacao": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação (horário de Brasília), não o do envio. Não pode ser no futuro."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1000,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou (métrica principal)."
+          },
+          "foto": {
+            "type": "string",
+            "format": "byte",
+            "description": "JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos."
+          }
+        },
+        "required": [
+          "chave",
+          "eletroposto_id",
+          "data_observacao",
+          "carregou",
+          "estava_como_informado"
+        ]
+      },
+      "CheckinRecebido": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Identificador da contribuição."
+          },
+          "chave": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "data_observacao": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}). null sem foto."
+          },
+          "recebido_em": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Quando a API recebeu o check-in pela primeira vez."
+          }
+        },
+        "required": [
+          "id",
+          "chave",
+          "eletroposto_id",
+          "data_observacao",
+          "foto",
+          "recebido_em"
         ]
       }
     }
