@@ -1,13 +1,15 @@
 // GET /v1/curador/fila e POST /v1/curador/decisoes: moderação dentro do app, para a conta com papel de Curador (no-core).
 // UC08 e RF11 do app; remoção de observação da Alteração 6 da obtenção.
-import { BadRequestException, Body, Controller, Get, NotFoundException, Post, Req, UseFilters, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, NotFoundException, Post, Query, Req, UseFilters, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse, ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Db } from '../db.js';
+import { indicadoresDoApp } from '../indicadores.js';
+import { diaEmBrasilia } from '../vocabulario.js';
 import { CuradorGuard, ErrosV1 } from './acesso.js';
-import { CAMPOS_CORRIGIVEIS, DecisaoRegistrada, Erro, FilaCurador, PedidoDecisao } from './contrato.js';
+import { CAMPOS_CORRIGIVEIS, DecisaoRegistrada, Erro, FilaCurador, IndicadoresCurador, PedidoDecisao, PedidoIndicadores } from './contrato.js';
 import { caminhoDaFoto } from './fotos.js';
 
 const SQL_FILA = `
@@ -31,6 +33,23 @@ SELECT
   (SELECT count(*)::int FROM observacao) AS recebidas,
   (SELECT count(*)::int FROM observacao_recusada) AS recusadas,
   (SELECT count(*)::int FROM observacao WHERE removida_em IS NOT NULL) AS removidas`;
+
+// Indicadores do Curador (RF15 do app). As contas agregam no banco: nenhum autor sai daqui (RN21).
+// Chegadas do período: check-ins não removidos, com a resposta "estava como o app informou".
+const SQL_CHEGADAS = `
+SELECT count(*)::int AS chegadas, count(*) FILTER (WHERE estava_como_informado = 'sim')::int AS como_informado,
+       count(DISTINCT autor)::int AS motoristas, max(data_observacao) AS dados_ate
+FROM observacao WHERE removida_em IS NULL AND data_observacao BETWEEN $1::date AND $2::date`;
+
+// Check-ins por semana (de segunda a domingo) em postos do OCM e próprios dentro do corredor da Via Dutra. Lugar do Google
+// não entra: a posição dele não pode ser usada em conta do REVOLT (só na regra dos 100 m).
+const SQL_SEMANAS = `
+SELECT date_trunc('week', o.data_observacao::timestamp)::date AS semana, count(*)::int AS checkins,
+       count(DISTINCT o.autor)::int AS motoristas, max(o.data_observacao) AS dados_ate
+FROM observacao o JOIN eletroposto e ON e.id = o.eletroposto_id AND e.origem <> 'google'
+WHERE o.removida_em IS NULL AND o.data_observacao BETWEEN $1::date AND $2::date
+  AND ST_Intersects((SELECT area FROM corredor_verificado WHERE nome = 'Via Dutra'), e.local::geometry)
+GROUP BY 1 ORDER BY 1`;
 
 // Uma decisão é uma instrução só: o efeito (CTE alvo, que devolve o alvo e os dados guardados), o registro com data e
 // motivo e, no duplicado confirmado, o vínculo que oculta um dos postos. $1 tipo, $2 motivo, $3 conta do Curador.
@@ -98,6 +117,26 @@ export class CuradorController {
       contribuicoes: r.contribuicoes.map(({ foto_id, ...c }) => ({ origem: 'observacao_motorista', ...c, foto: caminhoDaFoto(foto_id), recebida_em: iso(c.recebida_em) })),
       observacoes: { recebidas: r.recebidas, recusadas: r.recusadas, removidas: r.removidas },
     };
+  }
+
+  @Get('indicadores')
+  @ApiOperation({
+    summary: 'Indicadores do app',
+    description:
+      'Parcela das chegadas em que o posto estava como o app informou (o indicador principal) e check-ins por semana no corredor ' +
+      'da Via Dutra, no período pedido (padrão: os últimos 30 dias). Só agregados: grupo com menos de 5 motoristas distintos ' +
+      'sai sem números (RN21). Cada indicador traz o dia mais recente dos dados usados.',
+  })
+  @ApiOkResponse({ type: IndicadoresCurador })
+  @ApiBadRequestResponse({ type: Erro, description: 'Data malformada ou de depois de ate (erro pedido_invalido).' })
+  @ApiUnauthorizedResponse({ type: Erro })
+  @ApiForbiddenResponse({ type: Erro, description: 'Conta sem papel de Curador (erro papel_curador_necessario).' })
+  async indicadores(@Query() q: PedidoIndicadores) {
+    const ate = q.ate ?? diaEmBrasilia(new Date());
+    const de = q.de ?? new Date(Date.parse(ate) - 29 * 86_400_000).toISOString().slice(0, 10);
+    if (de > ate) throw new BadRequestException('de precisa ser igual ou anterior a ate');
+    const [[chegadas], semanas] = await Promise.all([this.db.query(SQL_CHEGADAS, [de, ate]), this.db.query(SQL_SEMANAS, [de, ate])]);
+    return { periodo: { de, ate }, calculado_em: new Date().toISOString(), ...indicadoresDoApp(chegadas, semanas) };
   }
 
   @Post('decisoes')

@@ -698,6 +698,87 @@
         ]
       }
     },
+    "/v1/curador/indicadores": {
+      "get": {
+        "description": "Parcela das chegadas em que o posto estava como o app informou (o indicador principal) e check-ins por semana no corredor da Via Dutra, no período pedido (padrão: os últimos 30 dias). Só agregados: grupo com menos de 5 motoristas distintos sai sem números (RN21). Cada indicador traz o dia mais recente dos dados usados.",
+        "operationId": "CuradorController_indicadores",
+        "parameters": [
+          {
+            "name": "de",
+            "required": false,
+            "in": "query",
+            "description": "Primeiro dia do período (dia em Brasília). Padrão: 29 dias antes de ate.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "ate",
+            "required": false,
+            "in": "query",
+            "description": "Último dia do período (dia em Brasília). Padrão: hoje.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndicadoresCurador"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Data malformada ou de depois de ate (erro pedido_invalido).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Indicadores do app",
+        "tags": [
+          "curador"
+        ]
+      }
+    },
     "/v1/curador/decisoes": {
       "post": {
         "description": "Aceitar, corrigir ou remover uma contribuição, remover uma foto, resolver um reporte ou bloquear uma conta, sempre com motivo. Remover tira a contribuição da ficha. Corrigir faz a ficha mostrar os valores corrigidos e guarda os originais no registro. O duplicado confirmado oculta um dos dois postos no mapa e no planejador, sem fundir os dados. O motorista que reportou vê a resolução.",
@@ -3125,6 +3206,141 @@
           "postos_com_mais_reportes",
           "contribuicoes",
           "observacoes"
+        ]
+      },
+      "PeriodoIndicadores": {
+        "type": "object",
+        "properties": {
+          "de": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          },
+          "ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          }
+        },
+        "required": [
+          "de",
+          "ate"
+        ]
+      },
+      "IndicadorComoInformado": {
+        "type": "object",
+        "properties": {
+          "chegadas": {
+            "type": "number",
+            "nullable": true,
+            "description": "Chegadas do período: check-ins não removidos pelo Curador."
+          },
+          "como_informado": {
+            "type": "number",
+            "nullable": true,
+            "description": "Chegadas em que o posto estava como o app informou."
+          },
+          "parcela": {
+            "type": "number",
+            "nullable": true,
+            "description": "como_informado / chegadas, de 0 a 1: o indicador principal. null sem chegadas."
+          },
+          "suprimido": {
+            "type": "boolean",
+            "description": "true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21)."
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "chegadas",
+          "como_informado",
+          "parcela",
+          "suprimido",
+          "dados_ate"
+        ]
+      },
+      "SemanaNoCorredor": {
+        "type": "object",
+        "properties": {
+          "semana": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Segunda-feira da semana (de segunda a domingo)."
+          },
+          "checkins": {
+            "type": "number",
+            "nullable": true,
+            "description": "Check-ins da semana em postos do OCM e próprios do corredor."
+          },
+          "suprimido": {
+            "type": "boolean",
+            "description": "true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21)."
+          }
+        },
+        "required": [
+          "semana",
+          "checkins",
+          "suprimido"
+        ]
+      },
+      "IndicadorCheckinsNoCorredor": {
+        "type": "object",
+        "properties": {
+          "semanas": {
+            "description": "Só as semanas com algum check-in no corredor da Via Dutra.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SemanaNoCorredor"
+            }
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "semanas",
+          "dados_ate"
+        ]
+      },
+      "IndicadoresCurador": {
+        "type": "object",
+        "properties": {
+          "periodo": {
+            "$ref": "#/components/schemas/PeriodoIndicadores"
+          },
+          "calculado_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "minimo_motoristas_por_grupo": {
+            "type": "number",
+            "example": 5,
+            "description": "Mínimo de motoristas distintos para um grupo mostrar números (RN21)."
+          },
+          "como_informado": {
+            "$ref": "#/components/schemas/IndicadorComoInformado"
+          },
+          "checkins_por_semana_no_corredor": {
+            "$ref": "#/components/schemas/IndicadorCheckinsNoCorredor"
+          }
+        },
+        "required": [
+          "periodo",
+          "calculado_em",
+          "minimo_motoristas_por_grupo",
+          "como_informado",
+          "checkins_por_semana_no_corredor"
         ]
       },
       "CorrecaoContribuicao": {

@@ -633,3 +633,48 @@ export class DecisaoRegistrada {
   @ApiProperty({ format: 'date-time' }) decidida_em: string;
 }
 
+
+// Indicadores do Curador (RF15 do app). Só agregados: grupo com menos motoristas que o mínimo sai suprimido (RN21).
+const DATA_PERIODO = { ...DIA, required: false };
+export class PedidoIndicadores {
+  @ApiProperty({ ...DATA_PERIODO, description: 'Primeiro dia do período (dia em Brasília). Padrão: 29 dias antes de ate.' })
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) de?: string;
+  @ApiProperty({ ...DATA_PERIODO, description: 'Último dia do período (dia em Brasília). Padrão: hoje.' })
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) ate?: string;
+}
+
+export class PeriodoIndicadores {
+  @ApiProperty(DIA) de: string;
+  @ApiProperty(DIA) ate: string;
+}
+
+const SUPRIMIDO_DOC = { description: 'true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21).' };
+const DADOS_ATE_DOC = { ...DIA, nullable: true, description: 'Dia mais recente dos dados usados no indicador. null sem dados.' };
+
+export class IndicadorComoInformado {
+  @ApiProperty({ type: Number, nullable: true, description: 'Chegadas do período: check-ins não removidos pelo Curador.' }) chegadas: number | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Chegadas em que o posto estava como o app informou.' }) como_informado: number | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'como_informado / chegadas, de 0 a 1: o indicador principal. null sem chegadas.' })
+  parcela: number | null;
+  @ApiProperty(SUPRIMIDO_DOC) suprimido: boolean;
+  @ApiProperty(DADOS_ATE_DOC) dados_ate: string | null;
+}
+
+export class SemanaNoCorredor {
+  @ApiProperty({ ...DIA, description: 'Segunda-feira da semana (de segunda a domingo).' }) semana: string;
+  @ApiProperty({ type: Number, nullable: true, description: 'Check-ins da semana em postos do OCM e próprios do corredor.' }) checkins: number | null;
+  @ApiProperty(SUPRIMIDO_DOC) suprimido: boolean;
+}
+
+export class IndicadorCheckinsNoCorredor {
+  @ApiProperty({ type: [SemanaNoCorredor], description: 'Só as semanas com algum check-in no corredor da Via Dutra.' }) semanas: SemanaNoCorredor[];
+  @ApiProperty(DADOS_ATE_DOC) dados_ate: string | null;
+}
+
+export class IndicadoresCurador {
+  @ApiProperty({ type: PeriodoIndicadores }) periodo: PeriodoIndicadores;
+  @ApiProperty({ type: String, format: 'date-time' }) calculado_em: string;
+  @ApiProperty({ example: 5, description: 'Mínimo de motoristas distintos para um grupo mostrar números (RN21).' }) minimo_motoristas_por_grupo: number;
+  @ApiProperty({ type: IndicadorComoInformado }) como_informado: IndicadorComoInformado;
+  @ApiProperty({ type: IndicadorCheckinsNoCorredor }) checkins_por_semana_no_corredor: IndicadorCheckinsNoCorredor;
+}

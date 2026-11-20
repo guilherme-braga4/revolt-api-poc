@@ -105,7 +105,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}', '/v1/curador/indicadores']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -11019,6 +11019,726 @@
               }
             ],
             "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m1', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m1\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m2', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m3', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m4', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m4\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m5",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m5', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m5\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m6",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m6', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m6\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m1 em ocm-9101 no dia 2026-11-09, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-09\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m2 em ocm-9102 no dia 2026-11-10, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0002-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9102\",\n  \"data_observacao\": \"2026-11-10\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m3 em ocm-9105 no dia 2026-11-11, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m3}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0003-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-11\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m4 em ocm-9108 no dia 2026-11-12, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m4}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0004-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9108\",\n  \"data_observacao\": \"2026-11-12\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m5 em ocm-9101 no dia 2026-11-14, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('d5_contrib_m5', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m5}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0005-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-14\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m1 em ocm-9109 no dia 2026-11-16, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0006-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9109\",\n  \"data_observacao\": \"2026-11-16\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m2 em ocm-9101 no dia 2026-11-17, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0007-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-17\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m3 em ocm-9106 no dia 2026-11-17, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m3}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0008-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9106\",\n  \"data_observacao\": \"2026-11-17\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m6 em google-corredorGoogle no dia 2026-11-18, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m6}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0009-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"google-corredorGoogle\",\n  \"data_observacao\": \"2026-11-18\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Indicadores do período de teste batem com a contagem manual (D5, RF15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Período pedido e data do cálculo', () => {",
+                  "  pm.expect(r.periodo).to.eql({ de: '2026-11-01', ate: '2026-11-30' });",
+                  "  pm.expect(new Date(r.calculado_em).getTime()).to.be.above(Date.now() - 600000);",
+                  "});",
+                  "pm.test('Indicador principal: 6 de 9 chegadas como o app informou, com a data dos dados', () =>",
+                  "  pm.expect(r.como_informado).to.eql({ chegadas: 9, como_informado: 6, parcela: 6 / 9, suprimido: false, dados_ate: '2026-11-18' }));",
+                  "pm.test('Check-ins por semana no corredor: a semana com 2 motoristas sai suprimida (RN21)', () =>",
+                  "  pm.expect(r.checkins_por_semana_no_corredor).to.eql({",
+                  "    semanas: [{ semana: '2026-11-09', checkins: 5, suprimido: false }, { semana: '2026-11-16', checkins: null, suprimido: true }],",
+                  "    dados_ate: '2026-11-17',",
+                  "  }));",
+                  "pm.test('Mínimo de motoristas por grupo', () => pm.expect(r.minimo_motoristas_por_grupo).to.eql(5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-01&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Curador remove um check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"motivo\": \"teste dos indicadores\", \"contribuicao_id\": {{d5_contrib_m5}}}"
+            }
+          }
+        },
+        {
+          "name": "Check-in removido sai dos indicadores; a semana fica com 4 motoristas e sai suprimida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('8 chegadas, 6 como o app informou', () => pm.expect([r.como_informado.chegadas, r.como_informado.como_informado, r.como_informado.parcela]).to.eql([8, 6, 0.75]));",
+                  "pm.test('Semana de 09/11 suprimida', () => pm.expect(r.checkins_por_semana_no_corredor.semanas[0]).to.eql({ semana: '2026-11-09', checkins: null, suprimido: true }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-01&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Período só da segunda semana: 4 motoristas, indicador principal suprimido (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "pm.test('Sem números, com a data dos dados', () =>",
+                  "  pm.expect(pm.response.json().como_informado).to.eql({ chegadas: null, como_informado: null, parcela: null, suprimido: true, dados_ate: '2026-11-18' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-16&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Sem período: os últimos 30 dias, até hoje em Brasília",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // dia em Brasília (UTC-3)",
+                  "const dias = (d) => Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5);",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('De hoje menos 29 dias até hoje', () => pm.expect(r.periodo).to.eql({ de: new Date(Date.parse(hoje) - 29 * 864e5).toISOString().slice(0, 10), ate: hoje }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Período invertido é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-20&ate=2026-11-10"
+          }
+        },
+        {
+          "name": "Data malformada é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=20/11/2026"
+          }
+        },
+        {
+          "name": "Indicadores recusados a motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Indicadores pedem conta [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/curador/indicadores"
           }
         }
       ]

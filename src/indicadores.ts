@@ -37,3 +37,37 @@ export function situacaoDoCorredor(linhas: any[], hoje: string) {
     postos,
   };
 }
+
+// RN21 do app: os indicadores não identificam motoristas. Cada grupo chega do banco já agregado, sem autor; com menos de
+// MINIMO_MOTORISTAS motoristas distintos, sai sem números, só marcado como suprimido.
+export const MINIMO_MOTORISTAS = 5;
+
+function semIdentificar(motoristas: number, numeros: Record<string, number | null>) {
+  const suprimido = motoristas < MINIMO_MOTORISTAS;
+  const saida: Record<string, number | boolean | null> = {};
+  for (const [nome, valor] of Object.entries(numeros)) saida[nome] = suprimido ? null : valor;
+  saida.suprimido = suprimido;
+  return saida;
+}
+
+type Grupo = { motoristas: number; dados_ate: string | null };
+
+// RF15 do app: parcela das chegadas em que o posto estava como o app informou (o indicador principal) e check-ins por
+// semana no corredor. Cada indicador traz o dia mais recente dos dados usados.
+export function indicadoresDoApp(chegadas: Grupo & { chegadas: number; como_informado: number }, semanas: (Grupo & { semana: string; checkins: number })[]) {
+  return {
+    minimo_motoristas_por_grupo: MINIMO_MOTORISTAS,
+    como_informado: {
+      ...semIdentificar(chegadas.motoristas, {
+        chegadas: chegadas.chegadas,
+        como_informado: chegadas.como_informado,
+        parcela: chegadas.chegadas ? chegadas.como_informado / chegadas.chegadas : null,
+      }),
+      dados_ate: chegadas.dados_ate,
+    },
+    checkins_por_semana_no_corredor: {
+      semanas: semanas.map((s) => ({ semana: s.semana, ...semIdentificar(s.motoristas, { checkins: s.checkins }) })),
+      dados_ate: semanas.map((s) => s.dados_ate).sort().pop() ?? null,
+    },
+  };
+}
