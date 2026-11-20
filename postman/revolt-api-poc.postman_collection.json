@@ -81,7 +81,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));",
-                  "pm.collectionVariables.unset('atestado'); // as chaves do apoio mudam a cada vez que ele sobe"
+                  "pm.collectionVariables.unset('atestado'); // as chaves do apoio mudam a cada vez que ele sobe",
+                  "pm.collectionVariables.unset('conta_curador');"
                 ]
               }
             }
@@ -102,9 +103,9 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const doc = pm.response.json();",
-                  "pm.test('OpenAPI 3 com as rotas da Fase 0 e o planejador de viagem', () => {",
+                  "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/mapa', '/v1/eletropostos/{id}', '/v1/viagens/planejar', '/v1/conta']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -2745,7 +2746,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 400', () => pm.response.to.have.status(400));",
-                  "pm.sendRequest(pm.variables.get('base_url') + '/postos-proprios/' + pm.collectionVariables.get('posto_id'), (e, r) => {",
+                  "pm.sendRequest({ url: pm.variables.get('base_url') + '/postos-proprios/' + pm.collectionVariables.get('posto_id'), header: { Authorization: 'Bearer ' + pm.collectionVariables.get('conta_curador') } }, (e, r) => {",
                   "  pm.test('Recusas não gravaram nada: continuam 2 verificações', () => pm.expect(r.json().verificacoes).to.have.length(2));",
                   "});"
                 ]
@@ -4041,7 +4042,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Devolve o identificador da conta', () => pm.expect(pm.response.json()).to.eql({ id: 'pessoa-teste' }));"
+                  "pm.test('Devolve o identificador da conta', () => pm.expect(pm.response.json()).to.eql({ id: 'pessoa-teste', papel: 'motorista', bloqueada: false }));"
                 ]
               }
             }
@@ -6692,6 +6693,3075 @@
           }
         }
       ]
+    },
+    {
+      "name": "12 · /v1 · Conta, contribuições e moderação (UC05 a UC08) e viagens salvas",
+      "item": [
+        {
+          "name": "Preparar: token de conta da motorista A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_a', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-a\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta do motorista B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_b', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-b\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador (CURADOR_CONTAS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Primeira entrada cria a conta da motorista A, com papel de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Conta de motorista, sem bloqueio (UC07)', () => pm.expect(pm.response.json()).to.eql({ id: 'motorista-a', papel: 'motorista', bloqueada: false }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta listada em CURADOR_CONTAS tem papel de Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Papel de Curador', () => pm.expect(pm.response.json()).to.eql({ id: 'curador-teste', papel: 'curador', bloqueada: false }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "[sem conta] Check-in sem conta é recusado, com convite para entrar (RN12)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json()).to.eql({ erro: 'conta_necessaria', mensagem: 'Entre com uma conta para continuar.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in da motorista A, enviado depois de ficar sem conexão, com a data da observação (UC05)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('contrib_a1', r.id);",
+                  "pm.test('Recebido com a data da observação, não a do envio', () => {",
+                  "  pm.expect(r).to.include({ chave: '00000001-0000-4000-8000-000000000000', eletroposto_id: 'ocm-9105', data_observacao: '2026-11-15', foto: null });",
+                  "  pm.expect(new Date(r.recebido_em).getTime()).to.be.closeTo(Date.now(), 120000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reenvio da mesma chave pela fila sem conexão não duplica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Mesma contribuição', () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('contrib_a1'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Uma observação só, com autor pseudônimo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const obs = pm.response.json();",
+                  "pm.test('O reenvio não criou outra observação', () => pm.expect(obs).to.have.length(1));",
+                  "pm.test('Autor é o pseudônimo da conta, não o identificador do login', () => {",
+                  "  pm.expect(obs[0].autor).to.match(/^[0-9a-f-]{36}$/);",
+                  "  pm.expect(JSON.stringify(obs)).to.not.include('motorista-a');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "Ficha vista por outra pessoa, sem conta: o check-in com a data e sem o autor (RN12, RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Confirmação de motorista com a data da observação', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-15' }));",
+                  "pm.test('O check-in não torna o posto verificado (RN15)', () => pm.expect(f.verificacao).to.eql({ situacao: 'nao_verificado', data: null }));",
+                  "pm.test('A contribuição traz o que o motorista viu, como observação de motorista', () => pm.expect(f.contribuicoes).to.eql([",
+                  "  { origem: 'observacao_motorista', data: '2026-11-15', carregou: true, conector: 'CCS2', funcionou: true, potencia_kw: 47.5,",
+                  "    preco: 'R$ 2,10/kWh', estava_como_informado: 'sim', foto: null, corrigida: false },",
+                  "]));",
+                  "pm.test('Sem nome, foto de perfil, veículo ou identificador do autor (RN12)', () => {",
+                  "  pm.expect(f.contribuicoes.every(semAutor)).to.eql(true);",
+                  "  pm.expect(pm.response.text()).to.not.include('motorista-a');",
+                  "});",
+                  "pm.test('Os atributos continuam vindo da fonte', () => pm.expect(f.atributos.preco.origem).to.not.eql('observacao_motorista'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "Mapa: o pino mostra a confirmação de motorista, à parte da verificação (RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json().pinos.find((p) => p.id === 'ocm-9105');",
+                  "pm.test('Confirmação de motorista com a data, sem virar verificado', () => {",
+                  "  pm.expect(p.confirmacao_motorista).to.eql({ data: '2026-11-15' });",
+                  "  pm.expect(p.verificacao.situacao).to.eql('nao_verificado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.118,-22.751,-45.098,-22.731&zoom=14"
+          }
+        },
+        {
+          "name": "Check-in num posto verificado: a verificação em campo continua a do Curador (RN15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000002-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"propria-1\",\n  \"data_observacao\": \"2026-11-19\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha do posto verificado: verificado em campo e, à parte, confirmado por motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Verificação e data da observação em campo, não do check-in', () => {",
+                  "  pm.expect(f.verificacao).to.eql({ situacao: 'verificado', data: '2026-11-18' });",
+                  "  pm.expect(f.atualizado_em).to.eql('2026-11-18');",
+                  "});",
+                  "pm.test('Confirmação de motorista com a data do check-in', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-19' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/propria-1"
+          }
+        },
+        {
+          "name": "Check-in do motorista B num lugar do Google, com foto (UC05, fluxo alternativo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.test('Foto recebida, com caminho próprio', () => pm.expect(r.foto).to.match(/^\\/v1\\/fotos\\/[0-9a-f-]{36}$/));",
+                  "pm.collectionVariables.set('foto_b', r.foto);",
+                  "pm.collectionVariables.set('contrib_b1', r.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000003-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"google-dubleViagem\",\n  \"data_observacao\": \"2026-11-20\",\n  \"carregou\": false,\n  \"estava_como_informado\": \"nao\",\n  \"foto\": \"/9j/4QEyRXhpZgAASUkqAAgAAAAJAA8BAgAOAAAAmAAAABIBAwABAAAAAQAAABoBBQABAAAAegAAABsBBQABAAAAggAAACgBAwABAAAAAgAAADEBAgANAAAAigAAABMCAwABAAAAAQAAAGmHBAABAAAApgAAACWIBAABAAAA9AAAAAAAAAA4YwAA6AMAADhjAADoAwAAQXV0b3JTZWNyZXRvAABDYW1lcmFEZVRlc3RlAAYAAJAHAAQAAAAwMjEwAZEHAAQAAAABAgMAAKAHAAQAAAAwMTAwAaADAAEAAAD//wAAAqAEAAEAAABAAAAAA6AEAAEAAAAwAAAAAAAAAAIAAQACAAIAAABTAAAAAgAFAAMAAAASAQAAAAAAABcAAAABAAAACwAAAAEAAAAAAAAAAQAAAP/bAEMACgcHCAcGCggICAsKCgsOGBAODQ0OHRUWERgjHyUkIh8iISYrNy8mKTQpISIwQTE0OTs+Pj4lLkRJQzxINz0+O//bAEMBCgsLDg0OHBAQHDsoIig7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O//AABEIADAAQAMBIgACEQEDEQH/xAAVAAEBAAAAAAAAAAAAAAAAAAAABf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJQCsSoAAAAAAAAAAAAAAAAAAAAAD//Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha do lugar do Google traz o check-in, sem dado do Google na contribuição (RN13)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Só o que o motorista informou', () => pm.expect(f.contribuicoes).to.eql([",
+                  "  { origem: 'observacao_motorista', data: '2026-11-20', carregou: false, conector: null, funcionou: null, potencia_kw: null, preco: null,",
+                  "    estava_como_informado: 'nao', foto: pm.collectionVariables.get('foto_b'), corrigida: false },",
+                  "]));",
+                  "pm.test('Confirmação de motorista e nenhum autor', () => {",
+                  "  pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-20' });",
+                  "  pm.expect(f.contribuicoes.every(semAutor)).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleViagem"
+          }
+        },
+        {
+          "name": "Nada da ficha do Google foi guardado com o check-in (RN13)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nome do lugar do Google em nenhuma tabela', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=Dublê do Trecho"
+          }
+        },
+        {
+          "name": "Observação no lugar do Google ligada só ao identificador dele",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const o = pm.response.json().find((o) => o.eletroposto_id === 'google-dubleViagem');",
+                  "pm.test('Só o identificador do lugar, sem coordenada nem dado do Google', () => {",
+                  "  pm.expect(Object.keys(o)).to.have.members(['id', 'eletroposto_id', 'autor', 'data_observacao', 'recebida_em', 'carregou', 'conector', 'funcionou',",
+                  "    'potencia_kw', 'preco', 'estava_como_informado', 'corrigida_em', 'removida_em', 'motivo_remocao', 'foto_id']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "Foto entregue sem EXIF, sem GPS e sem autor (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JPEG', () => pm.expect(pm.response.headers.get('Content-Type')).to.match(/^image\\/jpeg/));",
+                  "const bytes = pm.response.stream.toString('latin1');",
+                  "pm.test('Começa como JPEG', () => pm.expect(bytes.charCodeAt(0)).to.eql(0xff));",
+                  "pm.test('Sem EXIF nem os dados da câmera e do autor', () => {",
+                  "  for (const t of ['Exif', 'AutorSecreto', 'CameraDeTeste']) pm.expect(bytes, t).to.not.include(t);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}{{foto_b}}"
+          }
+        },
+        {
+          "name": "Foto inexistente: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/fotos/00000000-0000-4000-8000-000000000000"
+          }
+        },
+        {
+          "name": "Check-in com campo copiado do Google é recusado (RN13, RF19 da obtenção)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Explica o motivo', () => pm.expect(pm.response.json().mensagem).to.include('campo fora da lista'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000004-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"nome\": \"Eletroposto Dublê do Trecho\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in sem data é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Falta a data', () => pm.expect(pm.response.json().mensagem).to.eql('Falta a data da observação.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000005-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Check-in com data no futuro é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Data no futuro', () => pm.expect(pm.response.json().mensagem).to.eql('A data da observação não pode ser no futuro.'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000006-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2999-12-31\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusas contadas por motivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Três recusas', () => pm.expect(pm.response.json().map((r) => r.motivo).sort()).to.eql(['campo_nao_aceito', 'data_futura', 'sem_data']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao_recusada"
+          }
+        },
+        {
+          "name": "Check-in em posto desconhecido: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000007-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-999999\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Foto com mais de 500 KB é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('foto_grande', '/9j/' + 'A'.repeat(700000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Foto inválida', () => pm.expect(pm.response.json()).to.eql({ erro: 'foto_invalida', mensagem: 'A foto passa de 500 KB.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000008-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"foto\": \"{{foto_grande}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Foto que não é JPEG é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Foto inválida', () => pm.expect(pm.response.json()).to.eql({ erro: 'foto_invalida', mensagem: 'A foto precisa ser JPEG.' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000009-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"foto\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Reporte sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de duplicado da motorista A, apontando o outro posto (UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('reporte_dup', r.id);",
+                  "pm.test('Recebido e aberto', () => pm.expect(r).to.eql({ id: r.id, somado_a_aberto: false, envios: 1, situacao: 'aberto' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "O mesmo duplicado reportado pelo motorista B soma-se ao reporte aberto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Mesmo reporte, com dois envios', () =>",
+                  "  pm.expect(pm.response.json()).to.eql({ id: Number(pm.collectionVariables.get('reporte_dup')), somado_a_aberto: true, envios: 2, situacao: 'aberto' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Mesmo endereço\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de preço errado com foto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Reporte novo', () => pm.expect(pm.response.json().somado_a_aberto).to.eql(false));",
+                  "pm.collectionVariables.set('reporte_preco', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9105\",\n  \"tipo\": \"preco_errado\",\n  \"detalhe\": \"Cobram R$ 3,00/kWh\",\n  \"foto\": \"/9j/4QEyRXhpZgAASUkqAAgAAAAJAA8BAgAOAAAAmAAAABIBAwABAAAAAQAAABoBBQABAAAAegAAABsBBQABAAAAggAAACgBAwABAAAAAgAAADEBAgANAAAAigAAABMCAwABAAAAAQAAAGmHBAABAAAApgAAACWIBAABAAAA9AAAAAAAAAA4YwAA6AMAADhjAADoAwAAQXV0b3JTZWNyZXRvAABDYW1lcmFEZVRlc3RlAAYAAJAHAAQAAAAwMjEwAZEHAAQAAAABAgMAAKAHAAQAAAAwMTAwAaADAAEAAAD//wAAAqAEAAEAAABAAAAAA6AEAAEAAAAwAAAAAAAAAAIAAQACAAIAAABTAAAAAgAFAAMAAAASAQAAAAAAABcAAAABAAAACwAAAAEAAAAAAAAAAQAAAP/bAEMACgcHCAcGCggICAsKCgsOGBAODQ0OHRUWERgjHyUkIh8iISYrNy8mKTQpISIwQTE0OTs+Pj4lLkRJQzxINz0+O//bAEMBCgsLDg0OHBAQHDsoIig7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O//AABEIADAAQAMBIgACEQEDEQH/xAAVAAEBAAAAAAAAAAAAAAAAAAAABf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJQCsSoAAAAAAAAAAAAAAAAAAAAAD//Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Duplicado sem o outro posto é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Duplicado do próprio posto é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9108\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Tipo outro sem detalhe é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"outro\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de posto desconhecido: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-999999\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Meus reportes: a motorista A vê que os dois foram recebidos e estão abertos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Dois envios dela, dos mais recentes', () => pm.expect(r.map((x) => x.tipo)).to.eql(['preco_errado', 'duplicado']));",
+                  "pm.test('Abertos, sem resolução', () => pm.expect(r.every((x) => x.situacao === 'aberto' && x.resolucao === null && x.resolvido_em === null)).to.eql(true));",
+                  "pm.test('Duplicado com os dois postos e o detalhe dela', () =>",
+                  "  pm.expect(r[1]).to.include({ eletroposto_id: 'ocm-9108', outro_eletroposto_id: 'ocm-9109', detalhe: 'Parece o mesmo posto de Resende', foto: null }));",
+                  "pm.test('Foto do reporte de preço', () => pm.expect(r[0].foto).to.match(/^\\/v1\\/fotos\\//));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Meus reportes do motorista B: só o envio dele",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Um envio, com o detalhe dele', () => pm.expect(pm.response.json().map((x) => x.detalhe)).to.eql(['Mesmo endereço']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "[sem conta] Rota de controle sem conta é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Conta necessária', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Rota de controle com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Papel de Curador necessário', () => pm.expect(pm.response.json().erro).to.eql('papel_curador_necessario'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Verificação em campo com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Motorista\",\n  \"data_observacao\": \"2026-11-20\",\n  \"localizacao\": {\n    \"lat\": -22.7,\n    \"lng\": -45.1\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Atualização do OCM com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "[sem conta] Fila do Curador sem conta é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Fila do Curador com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Papel de Curador necessário', () => pm.expect(pm.response.json().erro).to.eql('papel_curador_necessario'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Fila do Curador: reportes dos mais antigos, postos com mais reportes, contribuições e contagens (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Reportes abertos, do mais antigo: o duplicado com os dois postos, depois o de preço', () => {",
+                  "  pm.expect(f.reportes.map((r) => [r.tipo, r.eletroposto_id, r.outro_eletroposto_id])).to.eql([['duplicado', 'ocm-9108', 'ocm-9109'], ['preco_errado', 'ocm-9105', null]]);",
+                  "  pm.expect(f.reportes[0].envios.map((e) => e.detalhe)).to.eql(['Parece o mesmo posto de Resende', 'Mesmo endereço']);",
+                  "});",
+                  "pm.test('Postos com mais reportes abertos', () => pm.expect(f.postos_com_mais_reportes).to.eql([{ eletroposto_id: 'ocm-9105', abertos: 1 }, { eletroposto_id: 'ocm-9108', abertos: 1 }]));",
+                  "pm.test('Contribuições sem decisão, das mais recentes', () => pm.expect(f.contribuicoes.map((c) => c.eletroposto_id)).to.eql(['google-dubleViagem', 'propria-1', 'ocm-9105']));",
+                  "pm.test('Contagens de observações recebidas, recusadas e removidas (Alteração 6)', () => pm.expect(f.observacoes).to.eql({ recebidas: 3, recusadas: 3, removidas: 0 }));",
+                  "pm.collectionVariables.set('conta_b', f.reportes[0].envios[1].conta_id);",
+                  "pm.collectionVariables.set('contrib_a2', f.contribuicoes[1].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Decisão sem motivo é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"aceitar_contribuicao\",\n  \"contribuicao_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Decisão com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"aceitar_contribuicao\",\n  \"contribuicao_id\": 1,\n  \"motivo\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Corrigir uma contribuição, com motivo (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.test('Decisão registrada sobre a contribuição', () => pm.expect(pm.response.json()).to.include({ tipo: 'corrigir_contribuicao', alvo: 'contribuicao ' + pm.collectionVariables.get('contrib_a1') }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"corrigir_contribuicao\",\n  \"contribuicao_id\": {{contrib_a1}},\n  \"motivo\": \"Conferido com a rede\",\n  \"valores\": {\n    \"potencia_kw\": 50,\n    \"preco\": \"R$ 2,00/kWh\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A ficha mostra os valores corrigidos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Valores corrigidos, marcados como correção', () =>",
+                  "  pm.expect(pm.response.json().contribuicoes[0]).to.include({ potencia_kw: 50, preco: 'R$ 2,00/kWh', corrigida: true, conector: 'CCS2' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "O registro da decisão guarda os valores originais, a data, o motivo e o Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().find((d) => d.tipo === 'corrigir_contribuicao');",
+                  "pm.test('Originais, motivo, data e Curador', () => {",
+                  "  pm.expect(d.dados).to.eql({ originais: { potencia_kw: 47.5, preco: 'R$ 2,10/kWh' } });",
+                  "  pm.expect(d.motivo).to.eql('Conferido com a rede');",
+                  "  pm.expect(d.decidida_em).to.be.a('string');",
+                  "  pm.expect(d.curador_conta_id).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/decisao"
+          }
+        },
+        {
+          "name": "Correção sem nenhum valor é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"corrigir_contribuicao\", \"contribuicao_id\": 1, \"motivo\": \"x\", \"valores\": {}}"
+            }
+          }
+        },
+        {
+          "name": "Correção que apaga um valor obrigatório é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"corrigir_contribuicao\", \"contribuicao_id\": 1, \"motivo\": \"x\", \"valores\": {\"carregou\": null}}"
+            }
+          }
+        },
+        {
+          "name": "Aceitar uma contribuição",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"aceitar_contribuicao\", \"contribuicao_id\": {{contrib_a2}}, \"motivo\": \"Confere com a verificação\"}"
+            }
+          }
+        },
+        {
+          "name": "Remover a foto do check-in do motorista B",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('foto_id_b', pm.collectionVariables.get('foto_b').split('/').pop());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_foto\", \"foto_id\": \"{{foto_id_b}}\", \"motivo\": \"Foto mostra a placa de um carro\"}"
+            }
+          }
+        },
+        {
+          "name": "Foto removida pelo Curador não é mais entregue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}{{foto_b}}"
+          }
+        },
+        {
+          "name": "Remover a contribuição do motorista B, com motivo (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"contribuicao_id\": {{contrib_b1}}, \"motivo\": \"Check-in em posto onde a conta não esteve\"}"
+            }
+          }
+        },
+        {
+          "name": "Contribuição removida sai da ficha (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Sem contribuições nem confirmação de motorista', () => {",
+                  "  pm.expect(f.contribuicoes).to.eql([]);",
+                  "  pm.expect(f.confirmacao_motorista).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleViagem"
+          }
+        },
+        {
+          "name": "Remover de novo a mesma contribuição: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"contribuicao_id\": {{contrib_b1}}, \"motivo\": \"de novo\"}"
+            }
+          }
+        },
+        {
+          "name": "Fila depois das decisões: sem as contribuições decididas, com a removida contada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Nenhuma contribuição pendente', () => pm.expect(f.contribuicoes).to.eql([]));",
+                  "pm.test('Uma removida', () => pm.expect(f.observacoes).to.eql({ recebidas: 3, recusadas: 3, removidas: 1 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Mapa de Resende antes da decisão: os dois postos reportados como duplicados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Os dois postos', () => pm.expect(pm.response.json().pinos.map((p) => p.id)).to.include.members(['ocm-9108', 'ocm-9109']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-44.49,-22.49,-44.43,-22.46&zoom=14"
+          }
+        },
+        {
+          "name": "Duplicado confirmado só vale para reporte de duplicado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_preco}}, \"resolucao\": \"duplicado_confirmado\", \"manter\": \"ocm-9105\", \"motivo\": \"x\"}"
+            }
+          }
+        },
+        {
+          "name": "Confirmar o duplicado, mantendo um dos postos (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_dup}}, \"resolucao\": \"duplicado_confirmado\", \"manter\": \"ocm-9108\", \"motivo\": \"Mesmo posto, dois cadastros no OCM\"}"
+            }
+          }
+        },
+        {
+          "name": "Mapa de Resende: um só posto (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().pinos.map((p) => p.id);",
+                  "pm.test('Só o posto mantido', () => {",
+                  "  pm.expect(ids).to.include('ocm-9108');",
+                  "  pm.expect(ids).to.not.include('ocm-9109');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-44.49,-22.49,-44.43,-22.46&zoom=14"
+          }
+        },
+        {
+          "name": "Os dois registros continuam na base, sem fusão: vínculo de duplicado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Oculto e mantido', () => pm.expect(pm.response.json().map((v) => [v.oculto, v.mantido])).to.eql([['ocm-9109', 'ocm-9108']]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/vinculo_duplicado"
+          }
+        },
+        {
+          "name": "O planejador deixa de usar o posto oculto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const usados = r.paradas.flatMap((p) => [p.eletroposto.id, p.plano_b && p.plano_b.eletroposto.id]);",
+                  "pm.test('Viagem disponível, sem o posto oculto', () => {",
+                  "  pm.expect(r.disponivel).to.eql(true);",
+                  "  pm.expect(usados).to.not.include('ocm-9109');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "secao-12"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Meus reportes: a motorista A vê o duplicado resolvido (UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const dup = r.find((x) => x.tipo === 'duplicado');",
+                  "pm.test('Resolvido, com a resolução do Curador', () => {",
+                  "  pm.expect(dup).to.include({ situacao: 'resolvido', resolucao: 'duplicado_confirmado' });",
+                  "  pm.expect(dup.resolvido_em).to.be.a('string');",
+                  "});",
+                  "pm.test('O de preço continua aberto', () => pm.expect(r.find((x) => x.tipo === 'preco_errado').situacao).to.eql('aberto'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Resolver de novo o mesmo reporte: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_dup}}, \"resolucao\": \"improcedente\", \"motivo\": \"x\"}"
+            }
+          }
+        },
+        {
+          "name": "Resolver o reporte de preço com verificação em campo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_preco}}, \"resolucao\": \"verificacao_em_campo\", \"motivo\": \"Preço conferido no local\"}"
+            }
+          }
+        },
+        {
+          "name": "Bloquear a conta do motorista B (contribuidor abusivo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"bloquear_conta\", \"conta_id\": {{conta_b}}, \"motivo\": \"Check-ins falsos\"}"
+            }
+          }
+        },
+        {
+          "name": "A conta bloqueada sabe que não pode mais contribuir (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Bloqueada', () => pm.expect(pm.response.json()).to.eql({ id: 'motorista-b', papel: 'motorista', bloqueada: true }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta bloqueada não consegue fazer check-in (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Conta bloqueada', () => pm.expect(pm.response.json().erro).to.eql('conta_bloqueada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000010-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Conta bloqueada não consegue reportar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9105\",\n  \"tipo\": \"fora_de_servico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Conta bloqueada continua vendo os próprios reportes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Bloquear de novo a mesma conta: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"bloquear_conta\", \"conta_id\": {{conta_b}}, \"motivo\": \"de novo\"}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Excluir conta sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Preparar: pseudônimo e conta da motorista A antes da exclusão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const a = pm.response.json().find((c) => c.sub === 'motorista-a');",
+                  "pm.collectionVariables.set('pseudonimo_a', a.pseudonimo);",
+                  "pm.collectionVariables.set('conta_a', a.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/conta"
+          }
+        },
+        {
+          "name": "Antes: o pseudônimo da motorista A é o autor das duas observações dela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Na conta e nas duas observações', () => pm.expect(pm.response.json().por_tabela).to.include({ conta: 1, observacao: 2 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto={{pseudonimo_a}}"
+          }
+        },
+        {
+          "name": "A motorista A exclui a conta (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Nenhuma tabela guarda mais o identificador do login da motorista A (RF10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=motorista-a"
+          }
+        },
+        {
+          "name": "Nem o pseudônimo dela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto={{pseudonimo_a}}"
+          }
+        },
+        {
+          "name": "As observações continuam, cada uma com um autor sem ligação com a pessoa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const obs = pm.response.json();",
+                  "pm.test('As três observações continuam', () => pm.expect(obs.length).to.eql(3));",
+                  "pm.test('Autores todos diferentes: as observações dela não ficam agrupadas', () => pm.expect(new Set(obs.map((o) => o.autor)).size).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "As contribuições dela continuam, sem conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Três contribuições, as duas dela sem conta', () => {",
+                  "  pm.expect(c.length).to.eql(3);",
+                  "  pm.expect(c.filter((x) => x.conta_id === null).length).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/contribuicao"
+          }
+        },
+        {
+          "name": "Os envios de reporte dela continuam, sem conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const e = pm.response.json();",
+                  "pm.test('Nenhum envio com a conta excluída', () => pm.expect(e.filter((x) => x.conta_id === Number(pm.collectionVariables.get('conta_a')))).to.eql([]));",
+                  "pm.test('Os dois envios dela, sem conta', () => pm.expect(e.filter((x) => x.conta_id === null).length).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/reporte_envio"
+          }
+        },
+        {
+          "name": "A ficha continua com a contribuição dela, sem autor visível (RF10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const f = pm.response.json();",
+                  "pm.test('A contribuição corrigida continua', () => pm.expect(f.contribuicoes[0]).to.include({ potencia_kw: 50, corrigida: true }));",
+                  "pm.test('Sem autor', () => pm.expect(f.contribuicoes.every(semAutor)).to.eql(true));",
+                  "pm.test('A confirmação de motorista continua', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-15' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nenhum reporte', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Preparar: token de conta da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_c', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-c\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Listar viagens salvas sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "[sem conta] Salvar viagem sem conta é recusado: sem conta, a viagem fica só no aparelho",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Planejar sem salvar, mesmo com a conta no pedido (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Viagem planejada', () => pm.expect(pm.response.json().disponivel).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "X-Aparelho",
+                "value": "secao-12-rn21"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.18765,\n    \"lng\": -45.87654\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Nenhuma tabela guarda a origem da viagem só planejada (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=-23.18765"
+          }
+        },
+        {
+          "name": "Viagem só planejada não aparece nas viagens salvas (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "Salvar a viagem com conta (UC04)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const v = pm.response.json();",
+                  "pm.collectionVariables.set('viagem_c1', v.id);",
+                  "pm.test('Só o que o motorista informou', () =>",
+                  "  pm.expect(Object.keys(v).sort()).to.eql(['atualizada_em', 'autonomia_km', 'conectores', 'criada_em', 'destino', 'id', 'nome', 'origem']));",
+                  "pm.test('Os mesmos dados', () => {",
+                  "  pm.expect(v).to.include({ nome: 'São José dos Campos a Resende', autonomia_km: 100 });",
+                  "  pm.expect([v.origem, v.destino, v.conectores]).to.eql([{ lat: -23.19, lng: -45.88 }, { lat: -22.52, lng: -44.1 }, ['CCS2']]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com paradas ou rota do Google é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100,\n  \"paradas\": [\n    {\n      \"eletroposto_id\": \"ocm-9108\"\n    }\n  ],\n  \"linha\": \"_p~iF~ps|U\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem sem nome é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com nome em branco é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"   \",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com conector desconhecido é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"DESCONHECIDO\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Em outro aparelho, a motorista C vê a viagem salva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const l = pm.response.json();",
+                  "pm.test('A viagem salva', () => pm.expect(l.map((v) => [v.id, v.nome])).to.eql([[Number(pm.collectionVariables.get('viagem_c1')), 'São José dos Campos a Resende']]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "X-Aparelho",
+                "value": "outro-aparelho"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "O motorista B não vê a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "O motorista B não edita a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "O motorista B não apaga a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Editar a viagem salva (RF06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const v = pm.response.json();",
+                  "pm.test('Dados novos', () => pm.expect(v).to.include({ nome: 'SJC a Resende, com folga', autonomia_km: 80 }));",
+                  "pm.test('Data da alteração depois da criação', () => pm.expect(new Date(v.atualizada_em) > new Date(v.criada_em)).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"SJC a Resende, com folga\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 80\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar com dados inválidos é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "A tabela de viagens guarda só a conta, nome, origem, destino, conectores, autonomia e datas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json();",
+                  "pm.test('Uma viagem', () => pm.expect(t.length).to.eql(1));",
+                  "pm.test('Só essas colunas', () =>",
+                  "  pm.expect(Object.keys(t[0]).sort()).to.eql(['atualizada_em', 'autonomia_km', 'conectores', 'conta_id', 'criada_em', 'destino', 'id', 'nome', 'origem']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/viagem"
+          }
+        },
+        {
+          "name": "Apagar a viagem salva (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Depois de apagada, a lista fica vazia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "Apagar de novo: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Identificador que não é número: 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/abc"
+          }
+        },
+        {
+          "name": "Salvar outra viagem antes de excluir a conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "A motorista C exclui a conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "As viagens salvas somem com a conta (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/viagem"
+          }
+        }
+      ]
     }
   ],
   "event": [
@@ -6717,6 +9787,30 @@
           "      (erro, r) => {",
           "        pm.collectionVariables.set('atestado', r.json().token);",
           "        usar(r.json().token);",
+          "      },",
+          "    );",
+          "}",
+          "",
+          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle) exigem a conta do Curador: todo pedido",
+          "// leva o token de conta do dublê do login com o identificador de CURADOR_CONTAS, menos os marcados com \"[sem conta]\" no nome",
+          "// e os que já trazem o seu próprio Authorization (testes de conta sem papel de Curador).",
+          "const urlDoPedido = pm.variables.replaceIn(pm.request.url.toString());",
+          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle)(\\/|$)/.test(pm.request.url.getPath())",
+          "    && !pm.info.requestName.includes('[sem conta]') && !pm.request.headers.has('Authorization')) {",
+          "  const usarConta = (token) => pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
+          "  const guardada = pm.collectionVariables.get('conta_curador');",
+          "  if (guardada) usarConta(guardada);",
+          "  else",
+          "    pm.sendRequest(",
+          "      {",
+          "        url: pm.variables.get('apoio_url') + '/__apoio/token',",
+          "        method: 'POST',",
+          "        header: { 'Content-Type': 'application/json' },",
+          "        body: { mode: 'raw', raw: JSON.stringify({ tipo: 'conta', sub: 'curador-teste' }) },",
+          "      },",
+          "      (erro, r) => {",
+          "        pm.collectionVariables.set('conta_curador', r.json().token);",
+          "        usarConta(r.json().token);",
           "      },",
           "    );",
           "}"
@@ -6760,7 +9854,7 @@
           "      pm.test('Contrato: corpo bate com o esquema da especificação', () => pm.response.to.have.jsonSchema({ allOf: [converter(esquema)], components: { schemas } }));",
           "    }",
           "",
-          "    const corpo = pm.response.json();",
+          "    const corpo = (pm.response.headers.get('Content-Type') || '').includes('json') ? pm.response.json() : null;",
           "    const quatro = ['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso'];",
           "    if (rota === '/v1/mapa' && pm.response.code === 200)",
           "      pm.test('RNF-01: todo pino traz origem, verificação, data e condições de uso', () => {",

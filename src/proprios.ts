@@ -1,9 +1,10 @@
-import { Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import {
   IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsLatitude, IsLongitude, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested,
 } from 'class-validator';
 import { Db } from './db.js';
+import { CuradorGuard } from './v1/acesso.js';
 import { LICENCA_PROPRIA, TIPOS_CONECTOR } from './vocabulario.js';
 
 class Localizacao {
@@ -42,6 +43,8 @@ class Vinculo {
   @IsString() @IsNotEmpty() autor: string;
 }
 
+// Operação do módulo obtenção: só a conta com papel de Curador.
+@UseGuards(CuradorGuard)
 @Controller()
 export class PropriosController {
   constructor(private db: Db) {}

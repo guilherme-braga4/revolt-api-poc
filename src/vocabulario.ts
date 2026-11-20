@@ -1,5 +1,11 @@
 // Vocabulário do REVOLT, comum à obtenção e à API /v1. O app só vê estes nomes e valores, nunca os campos das fontes.
-import { condicoesOcm } from './ocm.js';
+
+// Condições de uso que acompanham cada posto do OCM entregue (RN05).
+export function condicoesOcm(provedor: string, licenca: string) {
+  return licenca === 'CC0'
+    ? `Domínio público (CC0). Crédito recomendado: "${provedor}" via Open Charge Map.`
+    : `Atribuição obrigatória (CC BY 4.0): "${provedor}" via Open Charge Map, indicando se o dado foi alterado.`;
+}
 
 export const TIPOS_CONECTOR = ['CCS2', 'CCS1', 'TIPO_2', 'TIPO_1', 'CHADEMO', 'GBT', 'TESLA', 'TOMADA', 'OUTRO', 'DESCONHECIDO'];
 // Carga rápida: conector de corrente contínua. Provisório, a revisar com o Curador.

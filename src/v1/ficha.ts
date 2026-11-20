@@ -10,9 +10,23 @@ import { GoogleService } from '../google.js';
 import { NAO_VERIFICADO, SITUACAO_POR_FUNCIONAMENTO, condicoesDeUso, diaEmBrasilia } from '../vocabulario.js';
 import { Acesso, ErrosV1 } from './acesso.js';
 import { Erro, Ficha, FichaIndisponivel } from './contrato.js';
+import { caminhoDaFoto } from './fotos.js';
 import { OCM_E_PROPRIOS_LIGADOS } from './mapa.js';
 
 const NAO_INFORMADO = { valor: null, origem: null, data: null };
+
+// Observações de motoristas entregues na ficha (RF19 da obtenção; RN12 e RN15 do app): as 10 mais recentes, sem as
+// removidas pelo Curador e nunca com o autor. Elas não mudam os atributos nem a verificação do posto.
+const SQL_CONTRIBUICOES = `
+  SELECT data_observacao AS data, carregou, conector, funcionou, potencia_kw::float8 AS potencia_kw, preco, estava_como_informado,
+         foto_id, corrigida_em IS NOT NULL AS corrigida
+  FROM observacao WHERE eletroposto_id = $1 AND removida_em IS NULL
+  ORDER BY data_observacao DESC, id DESC LIMIT 10`;
+const comContribuicoes = (ficha, linhas) => ({
+  ...ficha,
+  confirmacao_motorista: linhas.length ? { data: linhas[0].data } : null,
+  contribuicoes: linhas.map(({ foto_id, ...l }) => ({ origem: 'observacao_motorista', ...l, foto: caminhoDaFoto(foto_id) })),
+});
 const conector = (c) => ({ tipo: c.tipo, potencia_kw: c.potencia_kw ?? null, quantidade: c.quantidade ?? null });
 
 // Ficha de um posto do OCM ou próprio: cada atributo vem da verificação em campo vigente, se ela informou; senão, da
@@ -166,13 +180,16 @@ export class FichaController {
     if (id.startsWith('google-')) return this.fichaGoogle(id.slice('google-'.length), req);
     if (!/^(ocm|propria)-\d+$/.test(id)) throw new BadRequestException('id precisa ser ocm-<n>, propria-<n> ou google-<identificador>');
 
-    const [e] = await this.db.query(
-      `SELECT e.*, (SELECT ligada FROM fonte WHERE nome = 'propria') AS propria_ligada
-       FROM eletroposto e WHERE e.id = $1 AND ${OCM_E_PROPRIOS_LIGADOS}`,
-      [id],
-    );
+    const [[e], contribuicoes] = await Promise.all([
+      this.db.query(
+        `SELECT e.*, (SELECT ligada FROM fonte WHERE nome = 'propria') AS propria_ligada
+         FROM eletroposto e WHERE e.id = $1 AND ${OCM_E_PROPRIOS_LIGADOS}`,
+        [id],
+      ),
+      this.db.query(SQL_CONTRIBUICOES, [id]),
+    ]);
     if (!e) throw new NotFoundException('eletroposto não encontrado');
-    return fichaDaBase(e);
+    return comContribuicoes(fichaDaBase(e), contribuicoes);
   }
 
   private async fichaGoogle(placeId: string, req) {
@@ -183,7 +200,8 @@ export class FichaController {
       throw new HttpException({ erro: 'ritmo_de_robo', mensagem: 'Muitas fichas do Google em pouco tempo neste aparelho. Abra o lugar no Google Maps.', link_externo: linkPublico(placeId) }, 429);
 
     try {
-      return fichaDoGoogle(placeId, await this.google.ficha(placeId));
+      const [f, contribuicoes] = await Promise.all([this.google.ficha(placeId), this.db.query(SQL_CONTRIBUICOES, [`google-${placeId}`])]);
+      return comContribuicoes(fichaDoGoogle(placeId, f), contribuicoes);
     } catch (erro) {
       // Base fora do ar: mesmo assim o app pode abrir o lugar no Google Maps.
       if (erro instanceof BaseIndisponivel)

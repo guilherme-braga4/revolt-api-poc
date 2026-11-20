@@ -17,6 +17,10 @@ const CELULAS_POR_BLOCO = 4;
 // Preço que indica posto gratuito, no texto livre da fonte ou da verificação. Heurística, a revisar com dados reais.
 const GRATUITO = String.raw`(gr[aá]tis|gratuit|free|sem custo|^\s*(r\$\s*)?0+([.,]0+)?\s*$)`;
 
+// Dia da observação de motorista mais recente que o Curador não removeu (RN15 do app). Nunca torna o posto verificado.
+export const CONFIRMADO_EM = (id: string) =>
+  `(SELECT max(o.data_observacao) FROM observacao o WHERE o.eletroposto_id = ${id} AND o.removida_em IS NULL) AS confirmado_em`;
+
 // Itens do OCM e próprios que podem ser entregues: fonte e provedor ligados pelo Curador (RF10 da obtenção).
 export const OCM_E_PROPRIOS_LIGADOS = `(
   (origem = 'open_charge_map' AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
@@ -24,17 +28,18 @@ export const OCM_E_PROPRIOS_LIGADOS = `(
   OR (origem = 'verificacao_propria' AND (SELECT ligada FROM fonte WHERE nome = 'propria')))`;
 
 // Postos de OCM e próprios que podem ser entregues, no vocabulário do REVOLT, com os dados da verificação vigente por cima
-// dos da fonte (RN13 da obtenção). O mapa e o planejador de viagem leem daqui e acrescentam o seu recorte com AND.
+// dos da fonte (RN13 da obtenção). Sem o registro que o Curador confirmou ser duplicado de outro (UC08 do app). O mapa e o planejador de viagem leem daqui e acrescentam o seu recorte com AND.
 export const POSTOS_ENTREGUES = `
   SELECT e.id, e.origem, e.nome, e.lat, e.lng, e.provedor, e.licenca, e.data_fonte, e.situacao, e.funcionamento, e.data_observacao,
          v.vigente AS verificado,
          CASE WHEN v.vigente THEN coalesce(e.conectores_observados, e.conectores) ELSE e.conectores END AS conectores,
          CASE WHEN v.vigente THEN coalesce(e.acesso, e.acesso_fonte) ELSE e.acesso_fonte END AS acesso,
-         p.preco, p.preco ~* '${GRATUITO}' AS gratuito -- null quando o preço não é informado
+         p.preco, p.preco ~* '${GRATUITO}' AS gratuito, -- null quando o preço não é informado
+         ${CONFIRMADO_EM('e.id')}
   FROM eletroposto e,
        LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v,
        LATERAL (SELECT CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco) p
-  WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS}`;
+  WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS} AND e.id NOT IN (SELECT oculto FROM vinculo_duplicado)`;
 
 // Tipos de conector e maior potência de cada posto, a partir dos conectores de um POSTOS_ENTREGUES chamado b.
 export const TIPOS_E_POTENCIA = `
@@ -45,6 +50,7 @@ export const TIPOS_E_POTENCIA = `
 // view já corta as de mais de 30 dias), a mais de 100 m de um posto do OCM entregue e sem vínculo com um item entregue.
 export const LUGARES_GOOGLE_ENTREGAVEIS = `
   origem = 'google' AND (SELECT ligada FROM fonte WHERE nome = 'google') AND NOT duplicado_do_ocm
+  AND id NOT IN (SELECT oculto FROM vinculo_duplicado)
   AND google_place_id NOT IN (
     SELECT google_place_id FROM eletroposto WHERE origem <> 'google' AND google_place_id IS NOT NULL AND ${OCM_E_PROPRIOS_LIGADOS})`;
 
@@ -73,8 +79,8 @@ celulas AS (
   FROM visiveis WHERE $10::float8 IS NOT NULL GROUP BY 1, 2
 ),
 lugares AS NOT MATERIALIZED (
-  SELECT id, lat, lng, data_fonte FROM eletroposto
-  WHERE local::geometry && ST_MakeEnvelope($1, $2, $3, $4, 4326) AND ${LUGARES_GOOGLE_ENTREGAVEIS}
+  SELECT g.id, g.lat, g.lng, g.data_fonte, ${CONFIRMADO_EM('g.id')} FROM eletroposto g
+  WHERE g.local::geometry && ST_MakeEnvelope($1, $2, $3, $4, 4326) AND ${LUGARES_GOOGLE_ENTREGAVEIS}
 )
 SELECT
   (SELECT row_to_json(o) FROM (
@@ -86,7 +92,7 @@ SELECT
   (SELECT coalesce(json_agg(c ORDER BY c.cy, c.cx), '[]') FROM celulas c WHERE c.quantidade > 1) AS grupos,
   (SELECT coalesce(json_agg(v ORDER BY v.id), '[]') FROM (
      SELECT id, origem, nome, lat, lng, provedor, licenca, data_fonte, situacao, funcionamento, data_observacao, verificado, tipos, potencia_max_kw,
-            acesso, gratuito
+            acesso, gratuito, confirmado_em
      FROM visiveis vi
      WHERE $10::float8 IS NULL
         OR EXISTS (SELECT 1 FROM celulas c WHERE c.quantidade = 1 AND c.cx = floor(vi.lng / $10::float8) AND c.cy = floor(vi.lat / $10::float8))) v
@@ -110,6 +116,7 @@ export const pinoDaBase = (e) => ({
   origem: e.origem,
   // Só observação em campo torna o posto verificado (RN13 da obtenção), e ela vale como a informação mais confiável.
   verificacao: e.verificado ? { situacao: 'verificado', data: e.data_observacao } : NAO_VERIFICADO,
+  confirmacao_motorista: e.confirmado_em ? { data: e.confirmado_em } : null,
   atualizado_em: e.verificado ? e.data_observacao : diaEmBrasilia(e.data_fonte),
   condicoes_de_uso: condicoesDeUso(e.origem, e.provedor, e.licenca),
 });
@@ -126,6 +133,7 @@ export const pinoDoGoogle = (g) => ({
   gratuito: null,
   origem: 'google',
   verificacao: NAO_VERIFICADO,
+  confirmacao_motorista: g.confirmado_em ? { data: g.confirmado_em } : null,
   atualizado_em: diaEmBrasilia(g.data_fonte),
   condicoes_de_uso: condicoesDeUso('google'),
 });

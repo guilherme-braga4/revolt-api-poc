@@ -1,13 +1,7 @@
-import { BadGatewayException, Controller, Get, HttpCode, Injectable, Post } from '@nestjs/common';
+import { BadGatewayException, Controller, Get, HttpCode, Injectable, Post, UseGuards } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Db } from './db.js';
-
-// Condições de uso que acompanham cada posto do OCM entregue (RN05).
-export function condicoesOcm(provedor: string, licenca: string) {
-  return licenca === 'CC0'
-    ? `Domínio público (CC0). Crédito recomendado: "${provedor}" via Open Charge Map.`
-    : `Atribuição obrigatória (CC BY 4.0): "${provedor}" via Open Charge Map, indicando se o dado foi alterado.`;
-}
+import { CuradorGuard } from './v1/acesso.js';
 
 // Só CC0 e CC BY 4.0 entram (RN03). Qualquer outra licença devolve null.
 function licencaAberta(provedor: any): string | null {
@@ -109,6 +103,8 @@ export class OcmService {
   }
 }
 
+// Operação do módulo obtenção: só a conta com papel de Curador.
+@UseGuards(CuradorGuard)
 @Controller('ocm')
 export class OcmController {
   constructor(

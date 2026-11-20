@@ -324,7 +324,7 @@
     },
     "/v1/conta": {
       "get": {
-        "description": "Valida o token do provedor de login (D-04). A conta só é exigida para contribuir.",
+        "description": "Valida o token do provedor de login (D-04) e cria a conta na primeira entrada. A conta só é exigida para contribuir e salvar viagens. Diz o papel (o app mostra as telas do Curador) e se a conta foi bloqueada para contribuir.",
         "operationId": "ContaController_conta",
         "parameters": [],
         "responses": {
@@ -357,6 +357,653 @@
         "summary": "Conta do token",
         "tags": [
           "conta"
+        ]
+      },
+      "delete": {
+        "description": "Apaga a conta, as viagens salvas e a ligação com as contribuições e os reportes, que continuam sem autor. Vale também para conta bloqueada. Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior. A exclusão no provedor de login é feita pelo app.",
+        "operationId": "ContaController_excluir",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Conta excluída."
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Excluir a conta",
+        "tags": [
+          "conta"
+        ]
+      }
+    },
+    "/v1/checkins": {
+      "post": {
+        "description": "Exige conta não bloqueada. Entra na ficha como observação de motorista, com a data e sem o autor, e nunca torna o posto verificado. O check-in guardado sem conexão vai depois, com a data da observação e a mesma chave: reenviar não duplica. Num lugar do Google, guarda só o identificador dele. Pedidos recusados por validação são contados para o Curador.",
+        "operationId": "CheckinsController_checkin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoCheckin"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Esta conta já enviou esta chave: nada foi duplicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinRecebido"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Check-in recebido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinRecebido"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pedido inválido (erro pedido_invalido) ou foto que não é JPEG de até 500 KB (erro foto_invalida).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria): o app convida a entrar e guarda o check-in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta bloqueada pelo Curador (erro conta_bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Posto desconhecido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Check-in depois da recarga",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/fotos/{id}": {
+      "get": {
+        "description": "JPEG recomprimido pela API, sem metadados e sem autor. Sai da base quando o Curador remove.",
+        "operationId": "FotosController_foto",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A foto.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Foto inexistente ou removida pelo Curador.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Foto de um check-in ou reporte",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/reportes": {
+      "post": {
+        "description": "Exige conta não bloqueada. Vai para a fila do Curador. O mesmo problema já aberto (posto, tipo e, no duplicado, o outro posto) recebe mais um envio, sem criar outro reporte.",
+        "operationId": "ReportesController_reportar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoReporte"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReporteRecebido"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta bloqueada pelo Curador (erro conta_bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Posto desconhecido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reportar um problema no posto",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/reportes/meus": {
+      "get": {
+        "description": "Os últimos 100 envios da conta, com a situação e, depois de resolvido, a resolução do Curador.",
+        "operationId": "ReportesController_meus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeuReporte"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Meus reportes",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/curador/fila": {
+      "get": {
+        "description": "Reportes abertos dos mais antigos, postos com mais reportes abertos, contribuições ainda sem decisão e as contagens de observações.",
+        "operationId": "CuradorController_fila",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilaCurador"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fila de moderação",
+        "tags": [
+          "curador"
+        ]
+      }
+    },
+    "/v1/curador/decisoes": {
+      "post": {
+        "description": "Aceitar, corrigir ou remover uma contribuição, remover uma foto, resolver um reporte ou bloquear uma conta, sempre com motivo. Remover tira a contribuição da ficha. Corrigir faz a ficha mostrar os valores corrigidos e guarda os originais no registro. O duplicado confirmado oculta um dos dois postos no mapa e no planejador, sem fundir os dados. O motorista que reportou vê a resolução.",
+        "operationId": "CuradorController_decidir",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoDecisao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisaoRegistrada"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Alvo inexistente ou já decidido (contribuição removida, reporte resolvido, conta já bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Registrar uma decisão",
+        "tags": [
+          "curador"
+        ]
+      }
+    },
+    "/v1/viagens": {
+      "get": {
+        "description": "Das alteradas mais recentemente. Para planejar de novo, o app manda os mesmos dados ao planejar.",
+        "operationId": "ViagensSalvasController_listar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ViagemSalva"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Viagens salvas da conta",
+        "tags": [
+          "viagens"
+        ]
+      },
+      "post": {
+        "description": "Guarda só nome, origem, destino, conectores e autonomia. Viagem não salva não deixa registro (RN21).",
+        "operationId": "ViagensSalvasController_salvar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoViagemSalva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViagemSalva"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Salvar uma viagem",
+        "tags": [
+          "viagens"
+        ]
+      }
+    },
+    "/v1/viagens/{id}": {
+      "put": {
+        "description": "Troca todos os dados da viagem.",
+        "operationId": "ViagensSalvasController_editar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoViagemSalva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViagemSalva"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Viagem inexistente ou de outra conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar uma viagem salva",
+        "tags": [
+          "viagens"
+        ]
+      },
+      "delete": {
+        "operationId": "ViagensSalvasController_apagar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Viagem apagada."
+          },
+          "400": {
+            "description": "Identificador que não é número.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Viagem inexistente ou de outra conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apagar uma viagem salva",
+        "tags": [
+          "viagens"
         ]
       }
     }
@@ -436,6 +1083,20 @@
         },
         "required": [
           "situacao",
+          "data"
+        ]
+      },
+      "ConfirmacaoMotorista": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação de motorista mais recente que o Curador não removeu."
+          }
+        },
+        "required": [
           "data"
         ]
       },
@@ -560,6 +1221,16 @@
           "verificacao": {
             "$ref": "#/components/schemas/Verificacao"
           },
+          "confirmacao_motorista": {
+            "nullable": true,
+            "description": "Check-in de motorista (RN15 do app): mostrar \"confirmado por motorista\", à parte da verificação em campo. null quando não há.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmacaoMotorista"
+              }
+            ]
+          },
           "atualizado_em": {
             "type": "string",
             "format": "date",
@@ -581,6 +1252,7 @@
           "gratuito",
           "origem",
           "verificacao",
+          "confirmacao_motorista",
           "atualizado_em",
           "condicoes_de_uso"
         ]
@@ -1353,6 +2025,90 @@
           "disponibilidade"
         ]
       },
+      "ContribuicaoNaFicha": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": [
+              "observacao_motorista"
+            ],
+            "description": "Origem da informação: distinta da verificação em campo do Curador (RN15 do app)."
+          },
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão)."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true,
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou."
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.",
+            "example": null
+          },
+          "corrigida": {
+            "type": "boolean",
+            "description": "O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos."
+          }
+        },
+        "required": [
+          "origem",
+          "data",
+          "carregou",
+          "conector",
+          "funcionou",
+          "potencia_kw",
+          "preco",
+          "estava_como_informado",
+          "foto",
+          "corrigida"
+        ]
+      },
       "Ficha": {
         "type": "object",
         "properties": {
@@ -1386,6 +2142,23 @@
           "atributos": {
             "$ref": "#/components/schemas/Atributos"
           },
+          "confirmacao_motorista": {
+            "nullable": true,
+            "description": "Check-in de motorista mais recente (RN15 do app), à parte da verificação em campo. null quando não há.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmacaoMotorista"
+              }
+            ]
+          },
+          "contribuicoes": {
+            "description": "Até 10 observações de motoristas, das mais recentes, sem as removidas pelo Curador.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContribuicaoNaFicha"
+            }
+          },
           "lugar_vinculado": {
             "type": "string",
             "nullable": true,
@@ -1406,6 +2179,8 @@
           "atualizado_em",
           "condicoes_de_uso",
           "atributos",
+          "confirmacao_motorista",
+          "contribuicoes",
           "lugar_vinculado",
           "link_externo"
         ]
@@ -1810,10 +2585,838 @@
           "id": {
             "type": "string",
             "description": "Identificador da conta no provedor de login."
+          },
+          "papel": {
+            "type": "string",
+            "enum": [
+              "motorista",
+              "curador"
+            ],
+            "description": "curador: o app libera as telas de moderação (UC08)."
+          },
+          "bloqueada": {
+            "type": "boolean",
+            "description": "Bloqueada pelo Curador: não contribui mais e usa o app como quem não tem conta (UC07)."
           }
         },
         "required": [
-          "id"
+          "id",
+          "papel",
+          "bloqueada"
+        ]
+      },
+      "PedidoCheckin": {
+        "type": "object",
+        "properties": {
+          "chave": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Gerada pelo app para cada check-in. Reenviar com a mesma chave não duplica (fila sem conexão)."
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "ocm-<n>, propria-<n> ou google-<identificador>."
+          },
+          "data_observacao": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação (horário de Brasília), não o do envio. Não pode ser no futuro."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1000,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou (métrica principal)."
+          },
+          "foto": {
+            "type": "string",
+            "format": "byte",
+            "description": "JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos."
+          }
+        },
+        "required": [
+          "chave",
+          "eletroposto_id",
+          "data_observacao",
+          "carregou",
+          "estava_como_informado"
+        ]
+      },
+      "CheckinRecebido": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Identificador da contribuição."
+          },
+          "chave": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "data_observacao": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}). null sem foto."
+          },
+          "recebido_em": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Quando a API recebeu o check-in pela primeira vez."
+          }
+        },
+        "required": [
+          "id",
+          "chave",
+          "eletroposto_id",
+          "data_observacao",
+          "foto",
+          "recebido_em"
+        ]
+      },
+      "PedidoReporte": {
+        "type": "object",
+        "properties": {
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "ocm-<n>, propria-<n> ou google-<identificador>."
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "Só no duplicado, e obrigatório nele: o posto que o motorista acha ser o mesmo."
+          },
+          "detalhe": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Detalhe do problema. Obrigatório no tipo outro."
+          },
+          "foto": {
+            "type": "string",
+            "format": "byte",
+            "description": "JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos."
+          }
+        },
+        "required": [
+          "eletroposto_id",
+          "tipo"
+        ]
+      },
+      "ReporteRecebido": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Identificador do reporte."
+          },
+          "somado_a_aberto": {
+            "type": "boolean",
+            "description": "O mesmo problema já estava aberto: este envio somou-se a ele, sem criar outro reporte."
+          },
+          "envios": {
+            "type": "integer",
+            "description": "Envios do reporte aberto, contando este."
+          },
+          "situacao": {
+            "type": "string",
+            "enum": [
+              "aberto"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "somado_a_aberto",
+          "envios",
+          "situacao"
+        ]
+      },
+      "MeuReporte": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "No duplicado, o outro posto."
+          },
+          "detalhe": {
+            "type": "string",
+            "nullable": true
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto. null sem foto ou depois que o Curador a removeu."
+          },
+          "enviado_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "situacao": {
+            "type": "string",
+            "enum": [
+              "aberto",
+              "resolvido"
+            ]
+          },
+          "resolucao": {
+            "type": "string",
+            "enum": [
+              "duplicado_confirmado",
+              "inexistente",
+              "acesso_restrito",
+              "verificacao_em_campo",
+              "improcedente"
+            ],
+            "nullable": true,
+            "description": "Como o Curador resolveu. null enquanto aberto."
+          },
+          "resolvido_em": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "eletroposto_id",
+          "tipo",
+          "outro_eletroposto_id",
+          "detalhe",
+          "foto",
+          "enviado_em",
+          "situacao",
+          "resolucao",
+          "resolvido_em"
+        ]
+      },
+      "EnvioNaFila": {
+        "type": "object",
+        "properties": {
+          "conta_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Conta que enviou, para bloquear se for abuso. null depois que a conta foi excluída."
+          },
+          "detalhe": {
+            "type": "string",
+            "nullable": true
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true
+          },
+          "enviado_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "conta_id",
+          "detalhe",
+          "foto",
+          "enviado_em"
+        ]
+      },
+      "ReporteNaFila": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "No duplicado, o outro posto."
+          },
+          "aberto_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "abertos_no_posto": {
+            "type": "integer",
+            "description": "Reportes abertos do mesmo posto."
+          },
+          "envios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvioNaFila"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "eletroposto_id",
+          "tipo",
+          "outro_eletroposto_id",
+          "aberto_em",
+          "abertos_no_posto",
+          "envios"
+        ]
+      },
+      "PostoComReportes": {
+        "type": "object",
+        "properties": {
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "abertos": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eletroposto_id",
+          "abertos"
+        ]
+      },
+      "ContribuicaoNaFila": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": [
+              "observacao_motorista"
+            ],
+            "description": "Origem da informação: distinta da verificação em campo do Curador (RN15 do app)."
+          },
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão)."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true,
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou."
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.",
+            "example": null
+          },
+          "corrigida": {
+            "type": "boolean",
+            "description": "O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Identificador da contribuição, para a decisão."
+          },
+          "conta_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Conta que enviou. null depois que a conta foi excluída."
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "recebida_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "origem",
+          "data",
+          "carregou",
+          "conector",
+          "funcionou",
+          "potencia_kw",
+          "preco",
+          "estava_como_informado",
+          "foto",
+          "corrigida",
+          "id",
+          "conta_id",
+          "eletroposto_id",
+          "recebida_em"
+        ]
+      },
+      "ContagemObservacoes": {
+        "type": "object",
+        "properties": {
+          "recebidas": {
+            "type": "integer",
+            "description": "Observações de motoristas recebidas."
+          },
+          "recusadas": {
+            "type": "integer",
+            "description": "Check-ins recusados (sem data, data no futuro, campo fora da lista)."
+          },
+          "removidas": {
+            "type": "integer",
+            "description": "Observações removidas pelo Curador."
+          }
+        },
+        "required": [
+          "recebidas",
+          "recusadas",
+          "removidas"
+        ]
+      },
+      "FilaCurador": {
+        "type": "object",
+        "properties": {
+          "reportes": {
+            "description": "Reportes abertos, dos mais antigos (até 100).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReporteNaFila"
+            }
+          },
+          "postos_com_mais_reportes": {
+            "description": "Os 10 postos com mais reportes abertos.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostoComReportes"
+            }
+          },
+          "contribuicoes": {
+            "description": "Contribuições ainda sem decisão, das mais recentes (até 50).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContribuicaoNaFila"
+            }
+          },
+          "observacoes": {
+            "$ref": "#/components/schemas/ContagemObservacoes"
+          }
+        },
+        "required": [
+          "reportes",
+          "postos_com_mais_reportes",
+          "contribuicoes",
+          "observacoes"
+        ]
+      },
+      "CorrecaoContribuicao": {
+        "type": "object",
+        "properties": {
+          "carregou": {
+            "type": "boolean"
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.1,
+            "maximum": 1000
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ]
+          }
+        }
+      },
+      "PedidoDecisao": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "aceitar_contribuicao",
+              "corrigir_contribuicao",
+              "remover_contribuicao",
+              "remover_foto",
+              "resolver_reporte",
+              "bloquear_conta"
+            ]
+          },
+          "motivo": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Motivo, guardado com a decisão."
+          },
+          "contribuicao_id": {
+            "type": "integer",
+            "description": "Nas decisões sobre contribuição."
+          },
+          "valores": {
+            "description": "Em corrigir_contribuicao: os valores corrigidos.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CorrecaoContribuicao"
+              }
+            ]
+          },
+          "foto_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Em remover_foto."
+          },
+          "reporte_id": {
+            "type": "integer",
+            "description": "Em resolver_reporte."
+          },
+          "resolucao": {
+            "type": "string",
+            "enum": [
+              "duplicado_confirmado",
+              "inexistente",
+              "acesso_restrito",
+              "verificacao_em_campo",
+              "improcedente"
+            ],
+            "description": "Em resolver_reporte."
+          },
+          "manter": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "Em duplicado_confirmado: qual dos dois postos continua no mapa. O outro fica oculto."
+          },
+          "conta_id": {
+            "type": "integer",
+            "description": "Em bloquear_conta."
+          }
+        },
+        "required": [
+          "tipo",
+          "motivo"
+        ]
+      },
+      "DecisaoRegistrada": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "aceitar_contribuicao",
+              "corrigir_contribuicao",
+              "remover_contribuicao",
+              "remover_foto",
+              "resolver_reporte",
+              "bloquear_conta"
+            ]
+          },
+          "alvo": {
+            "type": "string",
+            "example": "contribuicao 12"
+          },
+          "decidida_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "alvo",
+          "decidida_em"
+        ]
+      },
+      "ViagemSalva": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "description": "Origem da viagem (WGS 84).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "destino": {
+            "description": "Destino da viagem (WGS 84).",
+            "example": {
+              "lat": -22.52,
+              "lng": -44.1
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "conectores": {
+            "type": "array",
+            "description": "Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.",
+            "example": [
+              "CCS2",
+              "TIPO_2"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "CCS2",
+                "CCS1",
+                "TIPO_2",
+                "TIPO_1",
+                "CHADEMO",
+                "GBT",
+                "TESLA",
+                "TOMADA"
+              ]
+            }
+          },
+          "autonomia_km": {
+            "type": "number",
+            "description": "Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.",
+            "minimum": 10,
+            "maximum": 2000,
+            "example": 250
+          },
+          "nome": {
+            "type": "string",
+            "example": "São José dos Campos a Resende",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "id": {
+            "type": "integer"
+          },
+          "criada_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "atualizada_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "origem",
+          "destino",
+          "conectores",
+          "autonomia_km",
+          "nome",
+          "id",
+          "criada_em",
+          "atualizada_em"
+        ]
+      },
+      "PedidoViagemSalva": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "description": "Origem da viagem (WGS 84).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "destino": {
+            "description": "Destino da viagem (WGS 84).",
+            "example": {
+              "lat": -22.52,
+              "lng": -44.1
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "conectores": {
+            "type": "array",
+            "description": "Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.",
+            "example": [
+              "CCS2",
+              "TIPO_2"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "CCS2",
+                "CCS1",
+                "TIPO_2",
+                "TIPO_1",
+                "CHADEMO",
+                "GBT",
+                "TESLA",
+                "TOMADA"
+              ]
+            }
+          },
+          "autonomia_km": {
+            "type": "number",
+            "description": "Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.",
+            "minimum": 10,
+            "maximum": 2000,
+            "example": 250
+          },
+          "nome": {
+            "type": "string",
+            "example": "São José dos Campos a Resende",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "origem",
+          "destino",
+          "conectores",
+          "autonomia_km",
+          "nome"
         ]
       }
     }

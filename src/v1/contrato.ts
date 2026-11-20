@@ -2,7 +2,10 @@
 // de contrato (Newman) comparam cada resposta real com ela, recusando campo a mais ou a menos.
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDefined, IsIn, IsInt, IsNumber, IsOptional, Max, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBase64, IsBoolean, IsDateString, IsDefined, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID,
+  Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
+} from 'class-validator';
 import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR } from '../vocabulario.js';
 
 const DIA = { type: String, format: 'date', example: '2026-11-12' };
@@ -77,6 +80,11 @@ export class Verificacao {
 
 // ---------- Resposta do mapa ----------
 
+// Observação de motorista (RN15 do app, RF19 e RN20 da obtenção): nunca torna o posto verificado.
+export class ConfirmacaoMotorista {
+  @ApiProperty({ ...DIA, description: 'Dia da observação de motorista mais recente que o Curador não removeu.' }) data: string;
+}
+
 export class Pino {
   @ApiProperty({ description: 'ocm-<n>, propria-<n> ou google-<identificador>.', example: 'ocm-9001' }) id: string;
   @ApiProperty({ type: Localizacao }) localizacao: Localizacao;
@@ -97,6 +105,11 @@ export class Pino {
   gratuito: boolean | null;
   @ApiProperty({ enum: ORIGENS, description: 'De onde vem o item. Define as condições de uso.' }) origem: string;
   @ApiProperty({ type: Verificacao }) verificacao: Verificacao;
+  @ApiProperty({
+    type: ConfirmacaoMotorista, nullable: true,
+    description: 'Check-in de motorista (RN15 do app): mostrar "confirmado por motorista", à parte da verificação em campo. null quando não há.',
+  })
+  confirmacao_motorista: ConfirmacaoMotorista | null;
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável: a verificação em campo, se houver; senão, o dia em que a fonte foi obtida.' })
   atualizado_em: string;
   @ApiProperty({ type: CondicoesDeUso }) condicoes_de_uso: CondicoesDeUso;
@@ -230,6 +243,21 @@ export class Atributos {
   @ApiProperty({ type: AtributoDisponibilidade }) disponibilidade: unknown;
 }
 
+// O que um motorista observou no posto, sem o autor (RN12 do app). Nunca traz dado do Google (RN13 do app).
+export class ContribuicaoNaFicha {
+  @ApiProperty({ enum: ['observacao_motorista'], description: 'Origem da informação: distinta da verificação em campo do Curador (RN15 do app).' }) origem: string;
+  @ApiProperty({ ...DIA, description: 'Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão).' }) data: string;
+  @ApiProperty({ description: 'O motorista carregou.' }) carregou: boolean;
+  @ApiProperty({ type: String, enum: TIPOS_CONECTOR, nullable: true, description: 'Conector usado.' }) conector: string | null;
+  @ApiProperty({ type: Boolean, nullable: true, description: 'O carregador funcionou.' }) funcionou: boolean | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Potência vista, em kW.' }) potencia_kw: number | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Preço visto, em texto livre.' }) preco: string | null;
+  @ApiProperty({ enum: ['sim', 'nao'], description: 'O posto estava como o app informou.' }) estava_como_informado: string;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.', example: null })
+  foto: string | null;
+  @ApiProperty({ description: 'O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos.' }) corrigida: boolean;
+}
+
 export class Ficha {
   @ApiProperty({ example: 'ocm-9001' }) id: string;
   @ApiProperty({ type: Localizacao }) localizacao: Localizacao;
@@ -238,6 +266,13 @@ export class Ficha {
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável. Na ficha de origem google, o dia da consulta.' }) atualizado_em: string;
   @ApiProperty({ type: CondicoesDeUso }) condicoes_de_uso: CondicoesDeUso;
   @ApiProperty({ type: Atributos }) atributos: Atributos;
+  @ApiProperty({
+    type: ConfirmacaoMotorista, nullable: true,
+    description: 'Check-in de motorista mais recente (RN15 do app), à parte da verificação em campo. null quando não há.',
+  })
+  confirmacao_motorista: ConfirmacaoMotorista | null;
+  @ApiProperty({ type: [ContribuicaoNaFicha], description: 'Até 10 observações de motoristas, das mais recentes, sem as removidas pelo Curador.' })
+  contribuicoes: ContribuicaoNaFicha[];
   @ApiProperty({ type: String, nullable: true, description: 'Lugar de origem google que o Curador confirmou ser este posto (google-<identificador>). Ele não sai separado no mapa.' })
   lugar_vinculado: string | null;
   @ApiProperty({ type: String, nullable: true, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga. Só na origem google.' })
@@ -286,6 +321,19 @@ export class PedidoPlanejarViagem {
   })
   @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(10) @Max(2000)
   autonomia_km: number;
+}
+
+// Viagem salva com conta (UC04, RF06, RN21): só o que o motorista informou, nada do Google (nem rota, nem paradas, nem lugares).
+export class PedidoViagemSalva extends PedidoPlanejarViagem {
+  @ApiProperty({ example: 'São José dos Campos a Resende', minLength: 1, maxLength: 100 })
+  @IsString() @Matches(/\S/, { message: 'nome não pode ser vazio' }) @MaxLength(100)
+  nome: string;
+}
+
+export class ViagemSalva extends PedidoViagemSalva {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ format: 'date-time' }) criada_em: string;
+  @ApiProperty({ format: 'date-time' }) atualizada_em: string;
 }
 
 export class RotaGoogle {
@@ -412,6 +460,8 @@ export class RespostaPlanejarViagem {
 
 export class Conta {
   @ApiProperty({ description: 'Identificador da conta no provedor de login.' }) id: string;
+  @ApiProperty({ enum: ['motorista', 'curador'], description: 'curador: o app libera as telas de moderação (UC08).' }) papel: string;
+  @ApiProperty({ description: 'Bloqueada pelo Curador: não contribui mais e usa o app como quem não tem conta (UC07).' }) bloqueada: boolean;
 }
 
 export class Erro {
@@ -424,3 +474,162 @@ export class FichaIndisponivel {
   @ApiProperty() mensagem: string;
   @ApiProperty({ type: String, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga (RN20 do app).' }) link_externo: string;
 }
+
+// ---------- Contribuições (Fase 3) ----------
+
+// Identificador de um posto, como o mapa e a ficha entregam.
+export const ID_ELETROPOSTO = /^(ocm-\d+|propria-\d+|google-[A-Za-z0-9_-]{1,300})$/;
+const ID_ELETROPOSTO_DOC = { example: 'ocm-9001', pattern: ID_ELETROPOSTO.source, description: 'ocm-<n>, propria-<n> ou google-<identificador>.' };
+const FOTO_DOC = {
+  required: false,
+  format: 'byte',
+  description: 'JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos.',
+};
+
+// Check-in depois da recarga (UC05, RF08). Só o que o motorista observou: campo fora desta lista, como um dado do Google,
+// é recusado (RN13 do app).
+export class PedidoCheckin {
+  @ApiProperty({ format: 'uuid', description: 'Gerada pelo app para cada check-in. Reenviar com a mesma chave não duplica (fila sem conexão).' })
+  @IsUUID() chave: string;
+  @ApiProperty(ID_ELETROPOSTO_DOC) @Matches(ID_ELETROPOSTO) eletroposto_id: string;
+  @ApiProperty({ ...DIA, description: 'Dia da observação (horário de Brasília), não o do envio. Não pode ser no futuro.' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) data_observacao: string;
+  @ApiProperty({ description: 'O motorista carregou.' }) @IsBoolean() carregou: boolean;
+  @ApiProperty({ required: false, enum: TIPOS_CONECTOR, description: 'Conector usado.' }) @IsOptional() @IsIn(TIPOS_CONECTOR) conector?: string;
+  @ApiProperty({ required: false, description: 'O carregador funcionou.' }) @IsOptional() @IsBoolean() funcionou?: boolean;
+  @ApiProperty({ required: false, minimum: 0.1, maximum: 1000, description: 'Potência vista, em kW.' })
+  @IsOptional() @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0.1) @Max(1000) potencia_kw?: number;
+  @ApiProperty({ required: false, maxLength: 200, description: 'Preço visto, em texto livre.' }) @IsOptional() @IsString() @MaxLength(200) preco?: string;
+  @ApiProperty({ enum: ['sim', 'nao'], description: 'O posto estava como o app informou (métrica principal).' }) @IsIn(['sim', 'nao']) estava_como_informado: string;
+  @ApiProperty(FOTO_DOC) @IsOptional() @IsBase64() foto?: string;
+}
+
+export class CheckinRecebido {
+  @ApiProperty({ type: 'integer', description: 'Identificador da contribuição.' }) id: number;
+  @ApiProperty({ format: 'uuid' }) chave: string;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty(DIA) data_observacao: string;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto (GET /v1/fotos/{id}). null sem foto.' }) foto: string | null;
+  @ApiProperty({ format: 'date-time', description: 'Quando a API recebeu o check-in pela primeira vez.' }) recebido_em: string;
+}
+
+export const TIPOS_REPORTE = ['inexistente', 'acesso_restrito', 'duplicado', 'preco_errado', 'fora_de_servico', 'outro'];
+export const RESOLUCOES_REPORTE = ['duplicado_confirmado', 'inexistente', 'acesso_restrito', 'verificacao_em_campo', 'improcedente'];
+
+// Reporte de problema no posto (UC06, RF09).
+export class PedidoReporte {
+  @ApiProperty(ID_ELETROPOSTO_DOC) @Matches(ID_ELETROPOSTO) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) @IsIn(TIPOS_REPORTE) tipo: string;
+  @ApiProperty({ ...ID_ELETROPOSTO_DOC, required: false, description: 'Só no duplicado, e obrigatório nele: o posto que o motorista acha ser o mesmo.' })
+  @ValidateIf((o) => o.tipo === 'duplicado') @Matches(ID_ELETROPOSTO) outro_eletroposto_id?: string;
+  @ApiProperty({ required: false, maxLength: 1000, description: 'Detalhe do problema. Obrigatório no tipo outro.' })
+  @ValidateIf((o) => o.tipo === 'outro' || o.detalhe != null) @IsString() @MaxLength(1000) @Matches(/\S/, { message: 'detalhe não pode ficar vazio' })
+  detalhe?: string;
+  @ApiProperty(FOTO_DOC) @IsOptional() @IsBase64() foto?: string;
+}
+
+export class ReporteRecebido {
+  @ApiProperty({ type: 'integer', description: 'Identificador do reporte.' }) id: number;
+  @ApiProperty({ description: 'O mesmo problema já estava aberto: este envio somou-se a ele, sem criar outro reporte.' }) somado_a_aberto: boolean;
+  @ApiProperty({ type: 'integer', description: 'Envios do reporte aberto, contando este.' }) envios: number;
+  @ApiProperty({ enum: ['aberto'] }) situacao: string;
+}
+
+export class MeuReporte {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) tipo: string;
+  @ApiProperty({ type: String, nullable: true, description: 'No duplicado, o outro posto.' }) outro_eletroposto_id: string | null;
+  @ApiProperty({ type: String, nullable: true }) detalhe: string | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto. null sem foto ou depois que o Curador a removeu.' }) foto: string | null;
+  @ApiProperty({ format: 'date-time' }) enviado_em: string;
+  @ApiProperty({ enum: ['aberto', 'resolvido'] }) situacao: string;
+  @ApiProperty({ type: String, enum: RESOLUCOES_REPORTE, nullable: true, description: 'Como o Curador resolveu. null enquanto aberto.' }) resolucao: string | null;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true }) resolvido_em: string | null;
+}
+
+// ---------- Moderação do Curador (UC08, RF11) ----------
+
+export class EnvioNaFila {
+  @ApiProperty({ type: 'integer', nullable: true, description: 'Conta que enviou, para bloquear se for abuso. null depois que a conta foi excluída.' })
+  conta_id: number | null;
+  @ApiProperty({ type: String, nullable: true }) detalhe: string | null;
+  @ApiProperty({ type: String, nullable: true }) foto: string | null;
+  @ApiProperty({ format: 'date-time' }) enviado_em: string;
+}
+
+export class ReporteNaFila {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) tipo: string;
+  @ApiProperty({ type: String, nullable: true, description: 'No duplicado, o outro posto.' }) outro_eletroposto_id: string | null;
+  @ApiProperty({ format: 'date-time' }) aberto_em: string;
+  @ApiProperty({ type: 'integer', description: 'Reportes abertos do mesmo posto.' }) abertos_no_posto: number;
+  @ApiProperty({ type: [EnvioNaFila] }) envios: EnvioNaFila[];
+}
+
+export class PostoComReportes {
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ type: 'integer' }) abertos: number;
+}
+
+export class ContribuicaoNaFila extends ContribuicaoNaFicha {
+  @ApiProperty({ type: 'integer', description: 'Identificador da contribuição, para a decisão.' }) id: number;
+  @ApiProperty({ type: 'integer', nullable: true, description: 'Conta que enviou. null depois que a conta foi excluída.' }) conta_id: number | null;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ format: 'date-time' }) recebida_em: string;
+}
+
+export class ContagemObservacoes {
+  @ApiProperty({ type: 'integer', description: 'Observações de motoristas recebidas.' }) recebidas: number;
+  @ApiProperty({ type: 'integer', description: 'Check-ins recusados (sem data, data no futuro, campo fora da lista).' }) recusadas: number;
+  @ApiProperty({ type: 'integer', description: 'Observações removidas pelo Curador.' }) removidas: number;
+}
+
+export class FilaCurador {
+  @ApiProperty({ type: [ReporteNaFila], description: 'Reportes abertos, dos mais antigos (até 100).' }) reportes: ReporteNaFila[];
+  @ApiProperty({ type: [PostoComReportes], description: 'Os 10 postos com mais reportes abertos.' }) postos_com_mais_reportes: PostoComReportes[];
+  @ApiProperty({ type: [ContribuicaoNaFila], description: 'Contribuições ainda sem decisão, das mais recentes (até 50).' }) contribuicoes: ContribuicaoNaFila[];
+  @ApiProperty({ type: ContagemObservacoes }) observacoes: ContagemObservacoes;
+}
+
+export const TIPOS_DECISAO = ['aceitar_contribuicao', 'corrigir_contribuicao', 'remover_contribuicao', 'remover_foto', 'resolver_reporte', 'bloquear_conta'];
+export const CAMPOS_CORRIGIVEIS = ['carregou', 'conector', 'funcionou', 'potencia_kw', 'preco', 'estava_como_informado'];
+
+// Valores corrigidos pelo Curador. null apaga um valor opcional.
+export class CorrecaoContribuicao {
+  @ApiProperty({ required: false }) @ValidateIf((o) => o.carregou !== undefined) @IsBoolean() carregou?: boolean;
+  @ApiProperty({ required: false, enum: TIPOS_CONECTOR, nullable: true }) @IsOptional() @IsIn(TIPOS_CONECTOR) conector?: string | null;
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsBoolean() funcionou?: boolean | null;
+  @ApiProperty({ required: false, nullable: true, minimum: 0.1, maximum: 1000 })
+  @IsOptional() @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0.1) @Max(1000) potencia_kw?: number | null;
+  @ApiProperty({ required: false, nullable: true, maxLength: 200 }) @IsOptional() @IsString() @MaxLength(200) preco?: string | null;
+  @ApiProperty({ required: false, enum: ['sim', 'nao'] })
+  @ValidateIf((o) => o.estava_como_informado !== undefined) @IsIn(['sim', 'nao']) estava_como_informado?: string;
+}
+
+const PARA = (...tipos: string[]) => (o) => tipos.includes(o.tipo);
+
+export class PedidoDecisao {
+  @ApiProperty({ enum: TIPOS_DECISAO }) @IsIn(TIPOS_DECISAO) tipo: string;
+  @ApiProperty({ maxLength: 500, description: 'Motivo, guardado com a decisão.' }) @IsString() @MaxLength(500) @Matches(/\S/, { message: 'motivo é obrigatório' }) motivo: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Nas decisões sobre contribuição.' })
+  @ValidateIf(PARA('aceitar_contribuicao', 'corrigir_contribuicao', 'remover_contribuicao')) @IsInt() contribuicao_id?: number;
+  @ApiProperty({ required: false, type: CorrecaoContribuicao, description: 'Em corrigir_contribuicao: os valores corrigidos.' })
+  @ValidateIf(PARA('corrigir_contribuicao')) @IsDefined() @ValidateNested() @Type(() => CorrecaoContribuicao) valores?: CorrecaoContribuicao;
+  @ApiProperty({ required: false, format: 'uuid', description: 'Em remover_foto.' }) @ValidateIf(PARA('remover_foto')) @IsUUID() foto_id?: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Em resolver_reporte.' }) @ValidateIf(PARA('resolver_reporte')) @IsInt() reporte_id?: number;
+  @ApiProperty({ required: false, enum: RESOLUCOES_REPORTE, description: 'Em resolver_reporte.' })
+  @ValidateIf(PARA('resolver_reporte')) @IsIn(RESOLUCOES_REPORTE) resolucao?: string;
+  @ApiProperty({ ...ID_ELETROPOSTO_DOC, required: false, description: 'Em duplicado_confirmado: qual dos dois postos continua no mapa. O outro fica oculto.' })
+  @ValidateIf((o) => o.resolucao === 'duplicado_confirmado') @Matches(ID_ELETROPOSTO) manter?: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Em bloquear_conta.' }) @ValidateIf(PARA('bloquear_conta')) @IsInt() conta_id?: number;
+}
+
+export class DecisaoRegistrada {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ enum: TIPOS_DECISAO }) tipo: string;
+  @ApiProperty({ example: 'contribuicao 12' }) alvo: string;
+  @ApiProperty({ format: 'date-time' }) decidida_em: string;
+}
+

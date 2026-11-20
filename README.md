@@ -108,6 +108,7 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 
 - `id` é `ocm-<id do OCM>`, `propria-<id do registro próprio>` ou `google-<place_id>`.
 - Cada atributo vem como `{ "valor", "origem", "data" }`. `valor: null` quer dizer "não informado". A verificação em campo vigente vence o dado da fonte, atributo por atributo.
+- **Observações de motoristas (Alteração 6 da obtenção):** `contribuicoes` traz até 10 check-ins, dos mais recentes, com `origem: "observacao_motorista"`, a data da observação e o que o motorista viu, nunca o autor (RN12). `confirmacao_motorista` (`{ data }` ou null) está na ficha e em todo pino, inclusive nos lugares do Google, para o app mostrar "confirmado por motorista" à parte da verificação em campo (RN15). A observação nunca torna o posto verificado e não muda os atributos nem `atualizado_em`. As removidas pelo Curador saem da entrega. As recusadas (sem data, com data no futuro ou com campo fora da lista, como um dado do Google) são contadas para o Curador.
 - `lugar_vinculado` aponta o lugar do Google que o Curador confirmou ser o mesmo posto. `link_externo` abre o lugar no Google Maps, sem consulta paga, e só existe na ficha do Google.
 - Ficha do Google sem atestado: 401. Muitas fichas seguidas no mesmo aparelho: 429. Teto atingido, Google desligado ou fora do ar: 503. Nos dois últimos casos a resposta traz `link_externo`, para o app oferecer o Google Maps.
 
@@ -127,6 +128,40 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - SKUs: a rota pede só distância, duração e linha, sem trânsito, sem paradas intermediárias e sem modificador de local, e fica no **Compute Routes Essentials** (10 mil grátis por mês, depois US$ 5 por mil). A busca pede só `places.id,places.location` e fica no **Text Search Pro** (5 mil grátis, depois US$ 32 por mil): só identificadores seria grátis, mas o mapa precisa da coordenada. Uma página de até 20 lugares por pedido. Cada consulta é conferida no teto antes de sair, primeiro a rota e depois a busca.
 - Volume real: numa cópia do banco com os 2.416 postos do OCM, a consulta dos postos ao longo de rotas sintéticas de 400 a 1.000 km leva de 30 a 80 ms, e a escolha das paradas, menos de 3 ms.
 
+**Viagens salvas (`GET`, `POST`, `PUT` e `DELETE /v1/viagens`, com conta)**
+
+- Corpo de `POST` e `PUT /v1/viagens/:id`: o mesmo do planejar mais `nome` (até 100 caracteres). A API guarda só nome, origem, destino, conectores e autonomia: nada do Google, nem rota, nem paradas (RN21 e termos do Google). Campo a mais: 400.
+- `GET` lista as viagens da conta, das alteradas mais recentemente. Para abrir uma viagem, o app manda os mesmos dados ao planejar de novo.
+- Viagem de outra conta ou inexistente: 404. As viagens somem com a exclusão da conta. Sem conta, a viagem fica só no aparelho (UC04).
+- Planejar não guarda nada ligado à pessoa, mesmo com a conta no pedido (RN21).
+
+**Check-in (`POST /v1/checkins`, com conta)**
+
+- Corpo: `{ "chave", "eletroposto_id", "data_observacao", "carregou", "conector"?, "funcionou"?, "potencia_kw"?, "preco"?, "estava_como_informado": "sim" | "nao", "foto"? }`. A `chave` é um UUID gerado pelo app para cada check-in: reenviar a mesma chave (fila sem conexão) devolve 200 com a contribuição que já existe, sem duplicar. Check-in novo: 201.
+- `data_observacao` é o dia em que o motorista viu, não o do envio, e não pode ser no futuro. Campo fora da lista (um dado do Google, por exemplo) é recusado (RN13). As recusas por validação ficam contadas por motivo para o Curador.
+- A contribuição (módulo app) liga a conta ao que ela enviou; a observação (módulo obtenção) guarda o que o motorista viu, com o pseudônimo da conta como autor. Num lugar do Google, só o identificador dele.
+- Sem conta: 401 `conta_necessaria`, e o app convida a entrar. Conta bloqueada pelo Curador: 403 `conta_bloqueada`. Posto desconhecido: 404.
+- **Foto:** JPEG em base64, de até 500 KB. A API recomprime (sharp, no máximo 1.600 px de lado), o que descarta todo metadado, e guarda numa tabela própria. Sai por `GET /v1/fotos/:id`, sem autor, com identificador aleatório. Outro formato ou mais de 500 KB: 400 `foto_invalida`.
+
+**Reportes (`POST /v1/reportes` e `GET /v1/reportes/meus`, com conta)**
+
+- Corpo: `{ "eletroposto_id", "tipo", "outro_eletroposto_id"?, "detalhe"?, "foto"? }`. Tipos: `inexistente`, `acesso_restrito`, `duplicado` (exige `outro_eletroposto_id`, diferente do primeiro), `preco_errado`, `fora_de_servico` e `outro` (exige `detalhe`). A foto segue as regras do check-in.
+- O mesmo problema já aberto (posto, tipo e, no duplicado, o outro posto) recebe mais um envio, sem criar outro reporte: a resposta traz `somado_a_aberto` e `envios`.
+- `GET /v1/reportes/meus` lista os últimos 100 envios da conta, com `situacao` (`aberto` ou `resolvido`) e, depois de resolvido, a `resolucao` do Curador.
+
+**Moderação (`GET /v1/curador/fila` e `POST /v1/curador/decisoes`, conta de Curador)**
+
+- A fila traz os reportes abertos, dos mais antigos, com cada envio (conta, detalhe e foto); os 10 postos com mais reportes abertos; as contribuições ainda sem decisão de aceitar ou corrigir; e as contagens de observações recebidas, recusadas e removidas (Alteração 6).
+- Toda decisão leva `tipo` e `motivo`, e fica registrada com a data e a conta do Curador. Tipos:
+  - `aceitar_contribuicao` (`contribuicao_id`): só tira da fila;
+  - `corrigir_contribuicao` (`contribuicao_id`, `valores`): a ficha passa a mostrar os valores corrigidos, com `corrigida: true`, e os originais ficam no registro da decisão;
+  - `remover_contribuicao` (`contribuicao_id`): a contribuição sai da ficha e a confirmação de motorista é recalculada;
+  - `remover_foto` (`foto_id`): a foto é apagada e `GET /v1/fotos/:id` passa a responder 404;
+  - `resolver_reporte` (`reporte_id`, `resolucao`): `duplicado_confirmado` (só para reporte de duplicado, com `manter`, um dos dois postos), `inexistente`, `acesso_restrito`, `verificacao_em_campo` ou `improcedente`. O motorista vê a resolução em `GET /v1/reportes/meus`;
+  - `bloquear_conta` (`conta_id`, que vem na fila): a conta deixa de contribuir (403 `conta_bloqueada`), mas continua vendo os próprios reportes.
+- **Duplicado confirmado:** os dois registros continuam na base, sem fusão. Um vínculo marca o outro posto como oculto, e o mapa e o planejador deixam de mostrá-lo. Vale para OCM×OCM, próprio×OCM e lugar do Google.
+- Alvo inexistente ou já decidido (contribuição removida, reporte resolvido, conta já bloqueada): 404. Sem conta: 401. Conta sem papel de Curador: 403 `papel_curador_necessario`.
+
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 **Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.
@@ -135,7 +170,9 @@ Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a chave publicada, o emissor e o público.
 
-- **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir.
+- **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir e salvar viagens. A primeira entrada cria a conta, que guarda só o identificador do provedor (`sub`), o papel, o bloqueio e um pseudônimo, que é o autor das observações no módulo obtenção. `GET /v1/conta` devolve `{ id, papel, bloqueada }`.
+- **Exclusão (`DELETE /v1/conta`, 204):** apaga a conta e as viagens salvas. As contribuições e os reportes continuam, sem conta, e cada observação da pessoa ganha um autor aleatório próprio: nada liga as observações à pessoa nem entre si (UC07, RF10). Vale também para conta bloqueada. Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior.
+- **Papel de Curador:** as contas listadas em `CURADOR_CONTAS` (identificadores do provedor, separados por vírgula) têm papel `curador`. O papel é conferido a cada pedido: tirar uma conta da lista a devolve a `motorista`. Sem papel no provedor de login, sem mexer no console do Firebase.
 - **Atestado do app** (`X-Atestado-App: <token>`): prova que o pedido vem do app do REVOLT. Sem ele, o mapa não traz lugares do Google e a ficha do Google é recusada (RN18 da obtenção).
 - **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google e planejar até `LIMITE_ROTAS_GOOGLE` viagens a cada 10 minutos, contados à parte. Não é limite por pessoa.
 
@@ -144,6 +181,7 @@ A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a c
 | `CONTA_JWKS_URL` | `https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com` |
 | `CONTA_EMISSOR` | `https://securetoken.google.com/<id do projeto>` |
 | `CONTA_PUBLICO` | `<id do projeto>` |
+| `CURADOR_CONTAS` | identificador (`sub`) da conta do Curador no Firebase |
 | `ATESTADO_JWKS_URL` | `https://firebaseappcheck.googleapis.com/v1/jwks` |
 | `ATESTADO_EMISSOR` | `https://firebaseappcheck.googleapis.com/<número do projeto>` |
 | `ATESTADO_PUBLICO` | `projects/<número do projeto>` |
@@ -201,7 +239,7 @@ curl -X POST localhost:3333/google/varredura -H 'Content-Type: application/json'
 
 ## Endpoints do Curador e da operação
 
-Estes endpoints não são para o app. **Eles ainda não têm autenticação:** antes de publicar a API, precisam ficar atrás da conta com papel de Curador (Fase 3) ou fora da internet.
+Estes endpoints não são para o app. Desde a Fase 3, todos exigem a conta com papel de Curador (`Authorization: Bearer <token>` de uma conta listada em `CURADOR_CONTAS`). Sem conta: 401 `conta_necessaria`. Conta sem o papel: 403 `papel_curador_necessario`. Na coleção, o script da coleção pede ao dublê do login o token da conta `curador-teste` e o põe em todo pedido a essas rotas.
 
 | Método e caminho | O que faz | RF |
 |---|---|---|
@@ -281,12 +319,19 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 - **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação, tipo de conector e acesso, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
 - **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do app junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
 - **Excluir dados:** também desliga a fonte ou o provedor, para que os dados não voltem na próxima atualização.
+- **Moderação (Fase 3):** uma tabela de decisões guarda tipo, alvo, motivo, data, Curador e, na correção, os valores originais. A correção muda a observação e a marca como corrigida; o duplicado confirmado cria um vínculo (`vinculo_duplicado`: oculto e mantido), sem fundir dados, e o posto oculto sai do mapa, do planejador e das paradas. O efeito e o registro da decisão são uma instrução só no banco.
+
+## Pendentes (decisão do Guilherme)
+
+- **Token do Curador:** as rotas do Curador e da operação aceitam só o token do login gerenciado de uma conta em `CURADOR_CONTAS`. Enquanto o login do app (D-04) não existe, só o dublê da coleção emite esse token. Para o Curador real usar essas rotas, falta definir como ele obtém um token do Firebase (entrar pelo app e copiar o token, ou uma tela própria). Até lá, a escolha mais simples e reversível: a API não abre outro caminho de acesso, e as rotas ficam fechadas para quem não tem esse token.
+- **Exclusão no provedor de login:** a arquitetura pede que a API apague também a conta no Firebase. Isso exige o Admin SDK com uma credencial de serviço, que não existe aqui. Escolha mais simples e reversível: a API apaga os dados dela, e o app apaga o usuário no Firebase logo depois, com o próprio SDK do cliente.
+- **Paradas na viagem salva:** a viagem salva com conta guarda só origem, destino, conectores, autonomia e nome. As paradas que o motorista trocou ou removeu ficam só no aparelho; em outro aparelho, o app planeja de novo e pode sugerir outras paradas.
+- **Conta bloqueada que se exclui:** ao entrar de novo, a conta nova não está bloqueada. Impedir isso exigiria guardar o identificador do login depois da exclusão, o que contraria o RF10. Fica assim até decisão contrária.
 
 ## Fora desta fase
 
-- Viagens salvas com conta (`GET/POST/PUT/DELETE /v1/viagens`, Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
+- Indicadores (Fase 4), as Alterações 2, 4 e 5 do PRD de obtenção e a publicação da API.
 - Planejador: a telemetria do UC04 (viagens planejadas, trechos sem cobertura e paradas sem plano B); o acesso restrito, que hoje não impede um posto de virar parada; e mais de 9 paradas no link do Google Maps.
-- Autenticação das rotas do Curador e da operação: depende do papel de Curador (Fase 3). Bloqueia a publicação.
 - Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
 - Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).
 - Separação do banco em esquemas de obtenção e de app: as tabelas continuam no `public`.

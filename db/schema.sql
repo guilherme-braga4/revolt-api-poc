@@ -283,3 +283,121 @@ SELECT 'google-' || g.place_id,
        NULL
 FROM google_lugar g
 WHERE g.coordenada_obtida_em >= now() - interval '30 days';
+
+-- Contas do app (D-04, UC07). Do provedor de login, só o identificador (sub): nada de nome, e-mail ou senha (RN21 do app).
+-- O papel segue CURADOR_CONTAS a cada pedido. pseudonimo é o autor das observações no módulo obtenção (RF19 da obtenção).
+CREATE TABLE IF NOT EXISTS conta (
+  id serial PRIMARY KEY,
+  sub text NOT NULL UNIQUE,
+  papel text NOT NULL DEFAULT 'motorista' CHECK (papel IN ('motorista', 'curador')),
+  pseudonimo uuid NOT NULL DEFAULT gen_random_uuid(),
+  bloqueada_em timestamptz,
+  criada_em timestamptz NOT NULL DEFAULT now()
+);
+
+-- Observações de motoristas (Alteração 6 da obtenção: UC09, RF19 e RN20). O que o motorista viu, com autor pseudônimo e
+-- a data da observação. Nunca tornam o posto verificado. eletroposto_id é ocm-<n>, propria-<n> ou google-<identificador>:
+-- no lugar do Google, só o identificador, nenhum dado dele. A removida pelo Curador sai da entrega e fica no registro.
+CREATE TABLE IF NOT EXISTS observacao (
+  id serial PRIMARY KEY,
+  eletroposto_id text NOT NULL,
+  autor uuid NOT NULL, -- pseudônimo da conta; excluir a conta desfaz o elo entre os dois
+  data_observacao date NOT NULL,
+  recebida_em timestamptz NOT NULL DEFAULT now(),
+  carregou boolean NOT NULL,
+  conector text,
+  funcionou boolean,
+  potencia_kw numeric,
+  preco text,
+  estava_como_informado text NOT NULL CHECK (estava_como_informado IN ('sim', 'nao')),
+  corrigida_em timestamptz,
+  removida_em timestamptz,
+  motivo_remocao text
+);
+CREATE INDEX IF NOT EXISTS observacao_entregue ON observacao (eletroposto_id, data_observacao DESC) WHERE removida_em IS NULL;
+
+-- Observações recusadas (sem data, com campo fora da lista, como os do Google), só com o motivo: contagem para o Curador.
+CREATE TABLE IF NOT EXISTS observacao_recusada (
+  id serial PRIMARY KEY,
+  recusada_em timestamptz NOT NULL DEFAULT now(),
+  motivo text NOT NULL
+);
+
+-- Fotos de check-ins e reportes (RF08 e UC06 do app): JPEG recomprimido pela API, sem metadados. Identificador aleatório,
+-- para nenhuma foto ser achada por sequência. Removida pelo Curador, sai da base.
+CREATE TABLE IF NOT EXISTS foto (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  jpeg bytea NOT NULL,
+  criada_em timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE observacao ADD COLUMN IF NOT EXISTS foto_id uuid REFERENCES foto (id) ON DELETE SET NULL;
+
+-- Contribuições (módulo app): o elo entre a conta e o que ela enviou, para a moderação e para o check-in reenviado pela fila
+-- sem conexão não duplicar (chave gerada pelo app). Excluir a conta desliga o autor.
+CREATE TABLE IF NOT EXISTS contribuicao (
+  id serial PRIMARY KEY,
+  conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  chave uuid NOT NULL,
+  observacao_id integer NOT NULL REFERENCES observacao (id),
+  recebida_em timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (conta_id, chave)
+);
+
+-- Reportes de problema no posto (UC06 e RF09 do app). Um reporte aberto por problema (posto, tipo e, no duplicado, o outro
+-- posto): o repetido soma-se a ele como mais um envio. O Curador resolve com uma das resoluções e o motivo.
+CREATE TABLE IF NOT EXISTS reporte (
+  id serial PRIMARY KEY,
+  eletroposto_id text NOT NULL,
+  tipo text NOT NULL CHECK (tipo IN ('inexistente', 'acesso_restrito', 'duplicado', 'preco_errado', 'fora_de_servico', 'outro')),
+  outro_eletroposto_id text, -- só no duplicado
+  aberto_em timestamptz NOT NULL DEFAULT now(),
+  resolvido_em timestamptz,
+  resolucao text,
+  motivo_resolucao text
+);
+CREATE UNIQUE INDEX IF NOT EXISTS reporte_aberto ON reporte (eletroposto_id, tipo, (coalesce(outro_eletroposto_id, ''))) WHERE resolvido_em IS NULL;
+
+-- Cada envio de um reporte, com o autor (módulo app). Excluir a conta desliga o autor.
+CREATE TABLE IF NOT EXISTS reporte_envio (
+  id serial PRIMARY KEY,
+  reporte_id integer NOT NULL REFERENCES reporte (id),
+  conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  detalhe text,
+  foto_id uuid REFERENCES foto (id) ON DELETE SET NULL,
+  enviado_em timestamptz NOT NULL DEFAULT now()
+);
+
+-- Decisões do Curador na moderação (UC08 e RF11 do app): cada uma com data, motivo e alvo. Na correção, dados guarda os
+-- valores originais; a observação passa a ter os corrigidos.
+-- Viagens salvas com conta (UC04, RF06, RN21): só nome, origem, destino, conectores e autonomia. Somem com a conta.
+CREATE TABLE IF NOT EXISTS viagem (
+  id serial PRIMARY KEY,
+  conta_id int NOT NULL REFERENCES conta ON DELETE CASCADE,
+  nome text NOT NULL,
+  origem jsonb NOT NULL,
+  destino jsonb NOT NULL,
+  conectores text[] NOT NULL,
+  autonomia_km numeric NOT NULL,
+  criada_em timestamptz NOT NULL DEFAULT now(),
+  atualizada_em timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS viagem_conta ON viagem (conta_id);
+
+CREATE TABLE IF NOT EXISTS decisao (
+  id serial PRIMARY KEY,
+  tipo text NOT NULL,
+  alvo text NOT NULL, -- 'contribuicao <id>', 'foto <id>', 'reporte <id>' ou 'conta <id>'
+  motivo text NOT NULL,
+  dados jsonb,
+  curador_conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  decidida_em timestamptz NOT NULL DEFAULT now()
+);
+
+-- Duplicados confirmados pelo Curador (UC08 do app): o registro oculto deixa de sair no mapa e no planejador. Os dois
+-- registros continuam como vieram das fontes, sem fusão (vínculo de registros do PRD de obtenção).
+CREATE TABLE IF NOT EXISTS vinculo_duplicado (
+  oculto text PRIMARY KEY,
+  mantido text NOT NULL,
+  decisao_id integer NOT NULL REFERENCES decisao (id),
+  criado_em timestamptz NOT NULL DEFAULT now()
+);

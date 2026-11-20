@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsNotEmpty, IsNumber, IsString, Min } from 'class-validator';
 import { Db } from './db.js';
+import { CuradorGuard } from './v1/acesso.js';
 import { GoogleService } from './google.js';
 
 class Autor {
@@ -17,6 +18,8 @@ class MudarTeto extends Autor {
 }
 
 // UC06: teto de gasto e controle de fontes (RF09, RF10). Toda mudança guarda data e autor.
+// Operação do módulo obtenção: só a conta com papel de Curador.
+@UseGuards(CuradorGuard)
 @Controller('controle')
 export class ControleController {
   constructor(

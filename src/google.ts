@@ -1,8 +1,9 @@
-import { Body, Controller, HttpCode, HttpException, Injectable, NotFoundException, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpException, Injectable, NotFoundException, Post, UseGuards } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { Db } from './db.js';
+import { CuradorGuard } from './v1/acesso.js';
 
 // Tabela do Google de nov/2026, ainda não conferida na fatura (RF09). A rota e a busca ao longo da rota foram conferidas
 // na página oficial de preços em 19/11/2026.
@@ -298,6 +299,8 @@ class Varredura {
   @IsOptional() @IsInt() @Min(1) @Max(20000) limite?: number;
 }
 
+// Operação do módulo obtenção: só a conta com papel de Curador.
+@UseGuards(CuradorGuard)
 @Controller('google')
 export class GoogleController {
   constructor(private google: GoogleService) {}
