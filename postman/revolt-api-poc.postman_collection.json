@@ -12390,6 +12390,154 @@
           }
         }
       ]
+    },
+    {
+      "name": "14 · Auditoria de aceite · lacunas fechadas na Wave E",
+      "item": [
+        {
+          "name": "Preparar: zerar banco de teste e dublês",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_motorista_e', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-auditoria\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Varredura do Google sem conta não começa (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) =>",
+                  "  pm.test('Nenhuma busca no Google', () => pm.expect(r.json().chamadas.google_busca).to.eql(0)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Varredura do Google disparada por motorista não começa (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) =>",
+                  "  pm.test('Nenhuma busca no Google', () => pm.expect(r.json().chamadas.google_busca).to.eql(0)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_motorista_e}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        }
+      ]
     }
   ],
   "event": [

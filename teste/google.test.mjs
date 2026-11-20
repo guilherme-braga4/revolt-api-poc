@@ -80,3 +80,25 @@ describe('RN15 da obtenção: teto mensal de gasto com o Google', () => {
     assert.equal(chamadasAoGoogle, 0);
   });
 });
+
+describe('RN21 da obtenção: a varredura só começa depois do disparo do Curador', () => {
+  // Banco falso só com a contagem de células: zero enquanto o Curador não disparou a primeira varredura.
+  const comCelulas = (n) => ({ query: async (sql) => (sql.includes('FROM google_celula') ? [{ n }] : []) });
+
+  test('sem o disparo, a tarefa diária não varre nem chama o Google', async () => {
+    const servico = new GoogleService(comCelulas(0));
+    let varreu = false;
+    servico.varrer = async () => (varreu = true);
+    assert.equal(await servico.varrerDiario(), undefined);
+    assert.equal(varreu, false);
+    assert.equal(chamadasAoGoogle, 0);
+  });
+
+  test('depois do disparo, a tarefa diária renova as células vencidas, até o limite do dia', async () => {
+    const servico = new GoogleService(comCelulas(42));
+    let limite = null;
+    servico.varrer = async (n) => (limite = n);
+    await servico.varrerDiario();
+    assert.equal(limite, 500);
+  });
+});
