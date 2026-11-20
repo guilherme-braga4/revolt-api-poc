@@ -4,7 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBase64, IsBoolean, IsDateString, IsDefined, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID,
-  Matches, Max, MaxLength, Min, ValidateNested,
+  Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR } from '../vocabulario.js';
 
@@ -498,5 +498,40 @@ export class CheckinRecebido {
   @ApiProperty(DIA) data_observacao: string;
   @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto (GET /v1/fotos/{id}). null sem foto.' }) foto: string | null;
   @ApiProperty({ format: 'date-time', description: 'Quando a API recebeu o check-in pela primeira vez.' }) recebido_em: string;
+}
+
+export const TIPOS_REPORTE = ['inexistente', 'acesso_restrito', 'duplicado', 'preco_errado', 'fora_de_servico', 'outro'];
+export const RESOLUCOES_REPORTE = ['duplicado_confirmado', 'inexistente', 'acesso_restrito', 'verificacao_em_campo', 'improcedente'];
+
+// Reporte de problema no posto (UC06, RF09).
+export class PedidoReporte {
+  @ApiProperty(ID_ELETROPOSTO_DOC) @Matches(ID_ELETROPOSTO) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) @IsIn(TIPOS_REPORTE) tipo: string;
+  @ApiProperty({ ...ID_ELETROPOSTO_DOC, required: false, description: 'Só no duplicado, e obrigatório nele: o posto que o motorista acha ser o mesmo.' })
+  @ValidateIf((o) => o.tipo === 'duplicado') @Matches(ID_ELETROPOSTO) outro_eletroposto_id?: string;
+  @ApiProperty({ required: false, maxLength: 1000, description: 'Detalhe do problema. Obrigatório no tipo outro.' })
+  @ValidateIf((o) => o.tipo === 'outro' || o.detalhe != null) @IsString() @MaxLength(1000) @Matches(/\S/, { message: 'detalhe não pode ficar vazio' })
+  detalhe?: string;
+  @ApiProperty(FOTO_DOC) @IsOptional() @IsBase64() foto?: string;
+}
+
+export class ReporteRecebido {
+  @ApiProperty({ type: 'integer', description: 'Identificador do reporte.' }) id: number;
+  @ApiProperty({ description: 'O mesmo problema já estava aberto: este envio somou-se a ele, sem criar outro reporte.' }) somado_a_aberto: boolean;
+  @ApiProperty({ type: 'integer', description: 'Envios do reporte aberto, contando este.' }) envios: number;
+  @ApiProperty({ enum: ['aberto'] }) situacao: string;
+}
+
+export class MeuReporte {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) tipo: string;
+  @ApiProperty({ type: String, nullable: true, description: 'No duplicado, o outro posto.' }) outro_eletroposto_id: string | null;
+  @ApiProperty({ type: String, nullable: true }) detalhe: string | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto. null sem foto ou depois que o Curador a removeu.' }) foto: string | null;
+  @ApiProperty({ format: 'date-time' }) enviado_em: string;
+  @ApiProperty({ enum: ['aberto', 'resolvido'] }) situacao: string;
+  @ApiProperty({ type: String, enum: RESOLUCOES_REPORTE, nullable: true, description: 'Como o Curador resolveu. null enquanto aberto.' }) resolucao: string | null;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true }) resolvido_em: string | null;
 }
 

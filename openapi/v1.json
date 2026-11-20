@@ -501,6 +501,125 @@
           "contribuicoes"
         ]
       }
+    },
+    "/v1/reportes": {
+      "post": {
+        "description": "Exige conta não bloqueada. Vai para a fila do Curador. O mesmo problema já aberto (posto, tipo e, no duplicado, o outro posto) recebe mais um envio, sem criar outro reporte.",
+        "operationId": "ReportesController_reportar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoReporte"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReporteRecebido"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta bloqueada pelo Curador (erro conta_bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Posto desconhecido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reportar um problema no posto",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
+    },
+    "/v1/reportes/meus": {
+      "get": {
+        "description": "Os últimos 100 envios da conta, com a situação e, depois de resolvido, a resolução do Curador.",
+        "operationId": "ReportesController_meus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeuReporte"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Meus reportes",
+        "tags": [
+          "contribuicoes"
+        ]
+      }
     }
   },
   "info": {
@@ -2215,6 +2334,154 @@
           "data_observacao",
           "foto",
           "recebido_em"
+        ]
+      },
+      "PedidoReporte": {
+        "type": "object",
+        "properties": {
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "ocm-<n>, propria-<n> ou google-<identificador>."
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "Só no duplicado, e obrigatório nele: o posto que o motorista acha ser o mesmo."
+          },
+          "detalhe": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Detalhe do problema. Obrigatório no tipo outro."
+          },
+          "foto": {
+            "type": "string",
+            "format": "byte",
+            "description": "JPEG em base64, de até 500 KB. O app tira os metadados ao recomprimir; a API recomprime de novo e descarta todos."
+          }
+        },
+        "required": [
+          "eletroposto_id",
+          "tipo"
+        ]
+      },
+      "ReporteRecebido": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Identificador do reporte."
+          },
+          "somado_a_aberto": {
+            "type": "boolean",
+            "description": "O mesmo problema já estava aberto: este envio somou-se a ele, sem criar outro reporte."
+          },
+          "envios": {
+            "type": "integer",
+            "description": "Envios do reporte aberto, contando este."
+          },
+          "situacao": {
+            "type": "string",
+            "enum": [
+              "aberto"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "somado_a_aberto",
+          "envios",
+          "situacao"
+        ]
+      },
+      "MeuReporte": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "No duplicado, o outro posto."
+          },
+          "detalhe": {
+            "type": "string",
+            "nullable": true
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto. null sem foto ou depois que o Curador a removeu."
+          },
+          "enviado_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "situacao": {
+            "type": "string",
+            "enum": [
+              "aberto",
+              "resolvido"
+            ]
+          },
+          "resolucao": {
+            "type": "string",
+            "enum": [
+              "duplicado_confirmado",
+              "inexistente",
+              "acesso_restrito",
+              "verificacao_em_campo",
+              "improcedente"
+            ],
+            "nullable": true,
+            "description": "Como o Curador resolveu. null enquanto aberto."
+          },
+          "resolvido_em": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "eletroposto_id",
+          "tipo",
+          "outro_eletroposto_id",
+          "detalhe",
+          "foto",
+          "enviado_em",
+          "situacao",
+          "resolucao",
+          "resolvido_em"
         ]
       }
     }

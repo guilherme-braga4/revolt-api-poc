@@ -104,7 +104,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/viagens/planejar']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens/planejar']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -7450,6 +7450,321 @@
               "mode": "raw",
               "raw": "{\n  \"chave\": \"00000009-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\",\n  \"foto\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"\n}"
             }
+          }
+        },
+        {
+          "name": "[sem conta] Reporte sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de duplicado da motorista A, apontando o outro posto (UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('reporte_dup', r.id);",
+                  "pm.test('Recebido e aberto', () => pm.expect(r).to.eql({ id: r.id, somado_a_aberto: false, envios: 1, situacao: 'aberto' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "O mesmo duplicado reportado pelo motorista B soma-se ao reporte aberto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Mesmo reporte, com dois envios', () =>",
+                  "  pm.expect(pm.response.json()).to.eql({ id: Number(pm.collectionVariables.get('reporte_dup')), somado_a_aberto: true, envios: 2, situacao: 'aberto' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9109\",\n  \"detalhe\": \"Mesmo endereço\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de preço errado com foto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Reporte novo', () => pm.expect(pm.response.json().somado_a_aberto).to.eql(false));",
+                  "pm.collectionVariables.set('reporte_preco', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9105\",\n  \"tipo\": \"preco_errado\",\n  \"detalhe\": \"Cobram R$ 3,00/kWh\",\n  \"foto\": \"/9j/4QEyRXhpZgAASUkqAAgAAAAJAA8BAgAOAAAAmAAAABIBAwABAAAAAQAAABoBBQABAAAAegAAABsBBQABAAAAggAAACgBAwABAAAAAgAAADEBAgANAAAAigAAABMCAwABAAAAAQAAAGmHBAABAAAApgAAACWIBAABAAAA9AAAAAAAAAA4YwAA6AMAADhjAADoAwAAQXV0b3JTZWNyZXRvAABDYW1lcmFEZVRlc3RlAAYAAJAHAAQAAAAwMjEwAZEHAAQAAAABAgMAAKAHAAQAAAAwMTAwAaADAAEAAAD//wAAAqAEAAEAAABAAAAAA6AEAAEAAAAwAAAAAAAAAAIAAQACAAIAAABTAAAAAgAFAAMAAAASAQAAAAAAABcAAAABAAAACwAAAAEAAAAAAAAAAQAAAP/bAEMACgcHCAcGCggICAsKCgsOGBAODQ0OHRUWERgjHyUkIh8iISYrNy8mKTQpISIwQTE0OTs+Pj4lLkRJQzxINz0+O//bAEMBCgsLDg0OHBAQHDsoIig7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O//AABEIADAAQAMBIgACEQEDEQH/xAAVAAEBAAAAAAAAAAAAAAAAAAAABf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AJQCsSoAAAAAAAAAAAAAAAAAAAAAD//Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Duplicado sem o outro posto é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Duplicado do próprio posto é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-9108\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Tipo outro sem detalhe é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"outro\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reporte de posto desconhecido: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9108\",\n  \"tipo\": \"duplicado\",\n  \"outro_eletroposto_id\": \"ocm-999999\",\n  \"detalhe\": \"Parece o mesmo posto de Resende\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Meus reportes: a motorista A vê que os dois foram recebidos e estão abertos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Dois envios dela, dos mais recentes', () => pm.expect(r.map((x) => x.tipo)).to.eql(['preco_errado', 'duplicado']));",
+                  "pm.test('Abertos, sem resolução', () => pm.expect(r.every((x) => x.situacao === 'aberto' && x.resolucao === null && x.resolvido_em === null)).to.eql(true));",
+                  "pm.test('Duplicado com os dois postos e o detalhe dela', () =>",
+                  "  pm.expect(r[1]).to.include({ eletroposto_id: 'ocm-9108', outro_eletroposto_id: 'ocm-9109', detalhe: 'Parece o mesmo posto de Resende', foto: null }));",
+                  "pm.test('Foto do reporte de preço', () => pm.expect(r[0].foto).to.match(/^\\/v1\\/fotos\\//));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Meus reportes do motorista B: só o envio dele",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Um envio, com o detalhe dele', () => pm.expect(pm.response.json().map((x) => x.detalhe)).to.eql(['Mesmo endereço']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
           }
         }
       ]

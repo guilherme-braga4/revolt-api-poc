@@ -342,3 +342,27 @@ CREATE TABLE IF NOT EXISTS contribuicao (
   recebida_em timestamptz NOT NULL DEFAULT now(),
   UNIQUE (conta_id, chave)
 );
+
+-- Reportes de problema no posto (UC06 e RF09 do app). Um reporte aberto por problema (posto, tipo e, no duplicado, o outro
+-- posto): o repetido soma-se a ele como mais um envio. O Curador resolve com uma das resoluções e o motivo.
+CREATE TABLE IF NOT EXISTS reporte (
+  id serial PRIMARY KEY,
+  eletroposto_id text NOT NULL,
+  tipo text NOT NULL CHECK (tipo IN ('inexistente', 'acesso_restrito', 'duplicado', 'preco_errado', 'fora_de_servico', 'outro')),
+  outro_eletroposto_id text, -- só no duplicado
+  aberto_em timestamptz NOT NULL DEFAULT now(),
+  resolvido_em timestamptz,
+  resolucao text,
+  motivo_resolucao text
+);
+CREATE UNIQUE INDEX IF NOT EXISTS reporte_aberto ON reporte (eletroposto_id, tipo, (coalesce(outro_eletroposto_id, ''))) WHERE resolvido_em IS NULL;
+
+-- Cada envio de um reporte, com o autor (módulo app). Excluir a conta desliga o autor.
+CREATE TABLE IF NOT EXISTS reporte_envio (
+  id serial PRIMARY KEY,
+  reporte_id integer NOT NULL REFERENCES reporte (id),
+  conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  detalhe text,
+  foto_id uuid REFERENCES foto (id) ON DELETE SET NULL,
+  enviado_em timestamptz NOT NULL DEFAULT now()
+);

@@ -136,6 +136,12 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - Sem conta: 401 `conta_necessaria`, e o app convida a entrar. Conta bloqueada pelo Curador: 403 `conta_bloqueada`. Posto desconhecido: 404.
 - **Foto:** JPEG em base64, de até 500 KB. A API recomprime (sharp, no máximo 1.600 px de lado), o que descarta todo metadado, e guarda numa tabela própria. Sai por `GET /v1/fotos/:id`, sem autor, com identificador aleatório. Outro formato ou mais de 500 KB: 400 `foto_invalida`.
 
+**Reportes (`POST /v1/reportes` e `GET /v1/reportes/meus`, com conta)**
+
+- Corpo: `{ "eletroposto_id", "tipo", "outro_eletroposto_id"?, "detalhe"?, "foto"? }`. Tipos: `inexistente`, `acesso_restrito`, `duplicado` (exige `outro_eletroposto_id`, diferente do primeiro), `preco_errado`, `fora_de_servico` e `outro` (exige `detalhe`). A foto segue as regras do check-in.
+- O mesmo problema já aberto (posto, tipo e, no duplicado, o outro posto) recebe mais um envio, sem criar outro reporte: a resposta traz `somado_a_aberto` e `envios`.
+- `GET /v1/reportes/meus` lista os últimos 100 envios da conta, com `situacao` (`aberto` ou `resolvido`) e, depois de resolvido, a `resolucao` do Curador.
+
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 **Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.

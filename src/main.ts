@@ -14,6 +14,7 @@ import { PropriosController } from './proprios.js';
 import { Acesso, ContaController, ContaGuard, ContribuicaoGuard, CuradorGuard } from './v1/acesso.js';
 import { CheckinsController } from './v1/checkins.js';
 import { FotosController } from './v1/fotos.js';
+import { ReportesController } from './v1/reportes.js';
 import { FichaController } from './v1/ficha.js';
 import { MapaController } from './v1/mapa.js';
 import { ViagensController } from './v1/viagens.js';
@@ -29,7 +30,7 @@ class ObtencaoModule {}
 // Módulo app: o contrato /v1 consumido pelo app do motorista (D-02).
 @Module({
   imports: [ObtencaoModule],
-  controllers: [MapaController, FichaController, ViagensController, ContaController, CheckinsController, FotosController],
+  controllers: [MapaController, FichaController, ViagensController, ContaController, CheckinsController, FotosController, ReportesController],
 })
 class AppV1Module {}
 
