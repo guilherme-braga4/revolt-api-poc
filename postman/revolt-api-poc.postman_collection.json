@@ -102,9 +102,9 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const doc = pm.response.json();",
-                  "pm.test('OpenAPI 3 com as rotas da Fase 0 e o planejador de viagem', () => {",
+                  "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/mapa', '/v1/eletropostos/{id}', '/v1/viagens/planejar', '/v1/conta']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/conta', '/v1/eletropostos/{id}', '/v1/mapa', '/v1/viagens/planejar']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -4041,7 +4041,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Devolve o identificador da conta', () => pm.expect(pm.response.json()).to.eql({ id: 'pessoa-teste' }));"
+                  "pm.test('Devolve o identificador da conta', () => pm.expect(pm.response.json()).to.eql({ id: 'pessoa-teste', papel: 'motorista', bloqueada: false }));"
                 ]
               }
             }
@@ -6692,6 +6692,148 @@
           }
         }
       ]
+    },
+    {
+      "name": "12 · /v1 · Conta, contribuições e moderação (UC05 a UC08) e viagens salvas",
+      "item": [
+        {
+          "name": "Preparar: token de conta da motorista A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_a', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-a\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta do motorista B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_b', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-b\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador (CURADOR_CONTAS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Primeira entrada cria a conta da motorista A, com papel de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Conta de motorista, sem bloqueio (UC07)', () => pm.expect(pm.response.json()).to.eql({ id: 'motorista-a', papel: 'motorista', bloqueada: false }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta listada em CURADOR_CONTAS tem papel de Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Papel de Curador', () => pm.expect(pm.response.json()).to.eql({ id: 'curador-teste', papel: 'curador', bloqueada: false }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        }
+      ]
     }
   ],
   "event": [
@@ -6760,7 +6902,7 @@
           "      pm.test('Contrato: corpo bate com o esquema da especificação', () => pm.response.to.have.jsonSchema({ allOf: [converter(esquema)], components: { schemas } }));",
           "    }",
           "",
-          "    const corpo = pm.response.json();",
+          "    const corpo = (pm.response.headers.get('Content-Type') || '').includes('json') ? pm.response.json() : null;",
           "    const quatro = ['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso'];",
           "    if (rota === '/v1/mapa' && pm.response.code === 200)",
           "      pm.test('RNF-01: todo pino traz origem, verificação, data e condições de uso', () => {",

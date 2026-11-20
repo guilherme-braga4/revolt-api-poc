@@ -135,7 +135,8 @@ Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a chave publicada, o emissor e o público.
 
-- **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir.
+- **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir e salvar viagens. A primeira entrada cria a conta, que guarda só o identificador do provedor (`sub`), o papel, o bloqueio e um pseudônimo, que é o autor das observações no módulo obtenção. `GET /v1/conta` devolve `{ id, papel, bloqueada }`.
+- **Papel de Curador:** as contas listadas em `CURADOR_CONTAS` (identificadores do provedor, separados por vírgula) têm papel `curador`. O papel é conferido a cada pedido: tirar uma conta da lista a devolve a `motorista`. Sem papel no provedor de login, sem mexer no console do Firebase.
 - **Atestado do app** (`X-Atestado-App: <token>`): prova que o pedido vem do app do REVOLT. Sem ele, o mapa não traz lugares do Google e a ficha do Google é recusada (RN18 da obtenção).
 - **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google e planejar até `LIMITE_ROTAS_GOOGLE` viagens a cada 10 minutos, contados à parte. Não é limite por pessoa.
 
@@ -144,6 +145,7 @@ A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a c
 | `CONTA_JWKS_URL` | `https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com` |
 | `CONTA_EMISSOR` | `https://securetoken.google.com/<id do projeto>` |
 | `CONTA_PUBLICO` | `<id do projeto>` |
+| `CURADOR_CONTAS` | identificador (`sub`) da conta do Curador no Firebase |
 | `ATESTADO_JWKS_URL` | `https://firebaseappcheck.googleapis.com/v1/jwks` |
 | `ATESTADO_EMISSOR` | `https://firebaseappcheck.googleapis.com/<número do projeto>` |
 | `ATESTADO_PUBLICO` | `projects/<número do projeto>` |

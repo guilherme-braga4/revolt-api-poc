@@ -324,7 +324,7 @@
     },
     "/v1/conta": {
       "get": {
-        "description": "Valida o token do provedor de login (D-04). A conta só é exigida para contribuir.",
+        "description": "Valida o token do provedor de login (D-04) e cria a conta na primeira entrada. A conta só é exigida para contribuir e salvar viagens. Diz o papel (o app mostra as telas do Curador) e se a conta foi bloqueada para contribuir.",
         "operationId": "ContaController_conta",
         "parameters": [],
         "responses": {
@@ -1810,10 +1810,24 @@
           "id": {
             "type": "string",
             "description": "Identificador da conta no provedor de login."
+          },
+          "papel": {
+            "type": "string",
+            "enum": [
+              "motorista",
+              "curador"
+            ],
+            "description": "curador: o app libera as telas de moderação (UC08)."
+          },
+          "bloqueada": {
+            "type": "boolean",
+            "description": "Bloqueada pelo Curador: não contribui mais e usa o app como quem não tem conta (UC07)."
           }
         },
         "required": [
-          "id"
+          "id",
+          "papel",
+          "bloqueada"
         ]
       }
     }

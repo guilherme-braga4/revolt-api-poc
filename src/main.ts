@@ -10,7 +10,7 @@ import { Db } from './db.js';
 import { GoogleController, GoogleService } from './google.js';
 import { OcmController, OcmService } from './ocm.js';
 import { PropriosController } from './proprios.js';
-import { Acesso, ContaController, ContaGuard } from './v1/acesso.js';
+import { Acesso, ContaController, ContaGuard, CuradorGuard } from './v1/acesso.js';
 import { FichaController } from './v1/ficha.js';
 import { MapaController } from './v1/mapa.js';
 import { ViagensController } from './v1/viagens.js';
@@ -18,8 +18,8 @@ import { ViagensController } from './v1/viagens.js';
 // Módulo obtenção: a POC evoluída (OCM, varredura e ficha do Google, verificação própria, teto e fontes). Rotas do Curador.
 @Module({
   controllers: [OcmController, GoogleController, PropriosController, ControleController],
-  providers: [Db, OcmService, GoogleService],
-  exports: [Db, GoogleService],
+  providers: [Db, OcmService, GoogleService, Acesso, ContaGuard, CuradorGuard],
+  exports: [Db, GoogleService, Acesso, ContaGuard, CuradorGuard],
 })
 class ObtencaoModule {}
 
@@ -27,7 +27,6 @@ class ObtencaoModule {}
 @Module({
   imports: [ObtencaoModule],
   controllers: [MapaController, FichaController, ViagensController, ContaController],
-  providers: [Acesso, ContaGuard],
 })
 class AppV1Module {}
 

@@ -6,11 +6,12 @@
 // - Trava contra ritmo de robô: limite de fichas do Google e de viagens planejadas (rota e busca do Google) por aparelho,
 //   bem acima do uso humano. Não é limite por pessoa.
 import {
-  ArgumentsHost, CanActivate, Catch, Controller, ExceptionFilter, ExecutionContext, Get, HttpException, Injectable, Logger, Req,
-  UnauthorizedException, UseFilters, UseGuards,
+  ArgumentsHost, CanActivate, Catch, Controller, ExceptionFilter, ExecutionContext, ForbiddenException, Get, HttpException, Injectable, Logger,
+  Req, UnauthorizedException, UseFilters, UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { Db } from '../db.js';
 import { Conta, Erro } from './contrato.js';
 
 function verificador(prefixo: 'CONTA' | 'ATESTADO') {
@@ -66,20 +67,43 @@ export class Acesso {
   }
 }
 
-// Rotas que exigem conta. Guarda os dados do token em req.conta.
+// Contas com papel de Curador: identificadores do provedor de login, separados por vírgula (no-core; sem papel no provedor).
+const CURADORES = new Set((process.env.CURADOR_CONTAS ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+
+// Rotas que exigem conta. A primeira entrada cria a conta (UC07): do provedor de login, só o identificador. O papel segue
+// CURADOR_CONTAS a cada pedido. Guarda a conta em req.conta.
 @Injectable()
 export class ContaGuard implements CanActivate {
-  constructor(private acesso: Acesso) {}
+  constructor(
+    private acesso: Acesso,
+    private db: Db,
+  ) {}
 
   async canActivate(contexto: ExecutionContext) {
     const req = contexto.switchToHttp().getRequest();
-    req.conta = await this.acesso.contaDe(req);
-    if (!req.conta) throw new UnauthorizedException({ erro: 'conta_necessaria', mensagem: 'Entre com uma conta para continuar.' });
+    const token = await this.acesso.contaDe(req);
+    if (!token?.sub) throw new UnauthorizedException({ erro: 'conta_necessaria', mensagem: 'Entre com uma conta para continuar.' });
+    [req.conta] = await this.db.query(
+      `INSERT INTO conta (sub, papel) VALUES ($1, $2) ON CONFLICT (sub) DO UPDATE SET papel = EXCLUDED.papel
+       RETURNING id, sub, papel, pseudonimo, bloqueada_em`,
+      [token.sub, CURADORES.has(token.sub) ? 'curador' : 'motorista'],
+    );
     return true;
   }
 }
 
-const CODIGOS = { 400: 'pedido_invalido', 401: 'nao_autorizado', 404: 'nao_encontrado', 429: 'muitos_pedidos' };
+// Rotas do Curador: moderação (UC08) e operação do módulo obtenção.
+@Injectable()
+export class CuradorGuard extends ContaGuard {
+  async canActivate(contexto: ExecutionContext) {
+    await super.canActivate(contexto);
+    if (contexto.switchToHttp().getRequest().conta.papel !== 'curador')
+      throw new ForbiddenException({ erro: 'papel_curador_necessario', mensagem: 'Só a conta do Curador pode usar esta rota.' });
+    return true;
+  }
+}
+
+const CODIGOS = { 400: 'pedido_invalido', 401: 'nao_autorizado', 403: 'proibido', 404: 'nao_encontrado', 429: 'muitos_pedidos' };
 
 // Todo erro da /v1 sai no mesmo formato: { erro, mensagem } e, na ficha do Google, link_externo.
 @Catch()
@@ -105,10 +129,15 @@ export class ContaController {
   @Get()
   @UseGuards(ContaGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Conta do token', description: 'Valida o token do provedor de login (D-04). A conta só é exigida para contribuir.' })
+  @ApiOperation({
+    summary: 'Conta do token',
+    description:
+      'Valida o token do provedor de login (D-04) e cria a conta na primeira entrada. A conta só é exigida para contribuir e ' +
+      'salvar viagens. Diz o papel (o app mostra as telas do Curador) e se a conta foi bloqueada para contribuir.',
+  })
   @ApiOkResponse({ type: Conta })
   @ApiUnauthorizedResponse({ type: Erro })
   conta(@Req() req) {
-    return { id: req.conta.sub };
+    return { id: req.conta.sub, papel: req.conta.papel, bloqueada: req.conta.bloqueada_em !== null };
   }
 }

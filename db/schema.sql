@@ -283,3 +283,14 @@ SELECT 'google-' || g.place_id,
        NULL
 FROM google_lugar g
 WHERE g.coordenada_obtida_em >= now() - interval '30 days';
+
+-- Contas do app (D-04, UC07). Do provedor de login, só o identificador (sub): nada de nome, e-mail ou senha (RN21 do app).
+-- O papel segue CURADOR_CONTAS a cada pedido. pseudonimo é o autor das observações no módulo obtenção (RF19 da obtenção).
+CREATE TABLE IF NOT EXISTS conta (
+  id serial PRIMARY KEY,
+  sub text NOT NULL UNIQUE,
+  papel text NOT NULL DEFAULT 'motorista' CHECK (papel IN ('motorista', 'curador')),
+  pseudonimo uuid NOT NULL DEFAULT gen_random_uuid(),
+  bloqueada_em timestamptz,
+  criada_em timestamptz NOT NULL DEFAULT now()
+);

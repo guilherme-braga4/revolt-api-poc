@@ -412,6 +412,8 @@ export class RespostaPlanejarViagem {
 
 export class Conta {
   @ApiProperty({ description: 'Identificador da conta no provedor de login.' }) id: string;
+  @ApiProperty({ enum: ['motorista', 'curador'], description: 'curador: o app libera as telas de moderação (UC08).' }) papel: string;
+  @ApiProperty({ description: 'Bloqueada pelo Curador: não contribui mais e usa o app como quem não tem conta (UC07).' }) bloqueada: boolean;
 }
 
 export class Erro {
