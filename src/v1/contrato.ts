@@ -77,6 +77,11 @@ export class Verificacao {
 
 // ---------- Resposta do mapa ----------
 
+// Observação de motorista (RN15 do app, RF19 e RN20 da obtenção): nunca torna o posto verificado.
+export class ConfirmacaoMotorista {
+  @ApiProperty({ ...DIA, description: 'Dia da observação de motorista mais recente que o Curador não removeu.' }) data: string;
+}
+
 export class Pino {
   @ApiProperty({ description: 'ocm-<n>, propria-<n> ou google-<identificador>.', example: 'ocm-9001' }) id: string;
   @ApiProperty({ type: Localizacao }) localizacao: Localizacao;
@@ -97,6 +102,11 @@ export class Pino {
   gratuito: boolean | null;
   @ApiProperty({ enum: ORIGENS, description: 'De onde vem o item. Define as condições de uso.' }) origem: string;
   @ApiProperty({ type: Verificacao }) verificacao: Verificacao;
+  @ApiProperty({
+    type: ConfirmacaoMotorista, nullable: true,
+    description: 'Check-in de motorista (RN15 do app): mostrar "confirmado por motorista", à parte da verificação em campo. null quando não há.',
+  })
+  confirmacao_motorista: ConfirmacaoMotorista | null;
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável: a verificação em campo, se houver; senão, o dia em que a fonte foi obtida.' })
   atualizado_em: string;
   @ApiProperty({ type: CondicoesDeUso }) condicoes_de_uso: CondicoesDeUso;
@@ -230,6 +240,21 @@ export class Atributos {
   @ApiProperty({ type: AtributoDisponibilidade }) disponibilidade: unknown;
 }
 
+// O que um motorista observou no posto, sem o autor (RN12 do app). Nunca traz dado do Google (RN13 do app).
+export class ContribuicaoNaFicha {
+  @ApiProperty({ enum: ['observacao_motorista'], description: 'Origem da informação: distinta da verificação em campo do Curador (RN15 do app).' }) origem: string;
+  @ApiProperty({ ...DIA, description: 'Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão).' }) data: string;
+  @ApiProperty({ description: 'O motorista carregou.' }) carregou: boolean;
+  @ApiProperty({ type: String, enum: TIPOS_CONECTOR, nullable: true, description: 'Conector usado.' }) conector: string | null;
+  @ApiProperty({ type: Boolean, nullable: true, description: 'O carregador funcionou.' }) funcionou: boolean | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Potência vista, em kW.' }) potencia_kw: number | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Preço visto, em texto livre.' }) preco: string | null;
+  @ApiProperty({ enum: ['sim', 'nao'], description: 'O posto estava como o app informou.' }) estava_como_informado: string;
+  @ApiProperty({ type: String, nullable: true, description: 'Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.', example: null })
+  foto: string | null;
+  @ApiProperty({ description: 'O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos.' }) corrigida: boolean;
+}
+
 export class Ficha {
   @ApiProperty({ example: 'ocm-9001' }) id: string;
   @ApiProperty({ type: Localizacao }) localizacao: Localizacao;
@@ -238,6 +263,13 @@ export class Ficha {
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável. Na ficha de origem google, o dia da consulta.' }) atualizado_em: string;
   @ApiProperty({ type: CondicoesDeUso }) condicoes_de_uso: CondicoesDeUso;
   @ApiProperty({ type: Atributos }) atributos: Atributos;
+  @ApiProperty({
+    type: ConfirmacaoMotorista, nullable: true,
+    description: 'Check-in de motorista mais recente (RN15 do app), à parte da verificação em campo. null quando não há.',
+  })
+  confirmacao_motorista: ConfirmacaoMotorista | null;
+  @ApiProperty({ type: [ContribuicaoNaFicha], description: 'Até 10 observações de motoristas, das mais recentes, sem as removidas pelo Curador.' })
+  contribuicoes: ContribuicaoNaFicha[];
   @ApiProperty({ type: String, nullable: true, description: 'Lugar de origem google que o Curador confirmou ser este posto (google-<identificador>). Ele não sai separado no mapa.' })
   lugar_vinculado: string | null;
   @ApiProperty({ type: String, nullable: true, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga. Só na origem google.' })

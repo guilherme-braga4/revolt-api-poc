@@ -294,3 +294,31 @@ CREATE TABLE IF NOT EXISTS conta (
   bloqueada_em timestamptz,
   criada_em timestamptz NOT NULL DEFAULT now()
 );
+
+-- Observações de motoristas (Alteração 6 da obtenção: UC09, RF19 e RN20). O que o motorista viu, com autor pseudônimo e
+-- a data da observação. Nunca tornam o posto verificado. eletroposto_id é ocm-<n>, propria-<n> ou google-<identificador>:
+-- no lugar do Google, só o identificador, nenhum dado dele. A removida pelo Curador sai da entrega e fica no registro.
+CREATE TABLE IF NOT EXISTS observacao (
+  id serial PRIMARY KEY,
+  eletroposto_id text NOT NULL,
+  autor uuid NOT NULL, -- pseudônimo da conta; excluir a conta desfaz o elo entre os dois
+  data_observacao date NOT NULL,
+  recebida_em timestamptz NOT NULL DEFAULT now(),
+  carregou boolean NOT NULL,
+  conector text,
+  funcionou boolean,
+  potencia_kw numeric,
+  preco text,
+  estava_como_informado text NOT NULL CHECK (estava_como_informado IN ('sim', 'nao')),
+  corrigida_em timestamptz,
+  removida_em timestamptz,
+  motivo_remocao text
+);
+CREATE INDEX IF NOT EXISTS observacao_entregue ON observacao (eletroposto_id, data_observacao DESC) WHERE removida_em IS NULL;
+
+-- Observações recusadas (sem data, com campo fora da lista, como os do Google), só com o motivo: contagem para o Curador.
+CREATE TABLE IF NOT EXISTS observacao_recusada (
+  id serial PRIMARY KEY,
+  recusada_em timestamptz NOT NULL DEFAULT now(),
+  motivo text NOT NULL
+);

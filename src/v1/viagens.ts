@@ -10,7 +10,7 @@ import { GoogleService } from '../google.js';
 import { condicoesDeUso } from '../vocabulario.js';
 import { Acesso, ErrosV1 } from './acesso.js';
 import { Erro, PedidoPlanejarViagem, type Pino, RespostaPlanejarViagem } from './contrato.js';
-import { POSTOS_ENTREGUES, TIPOS_E_POTENCIA, pinoDaBase, pinoDoGoogle } from './mapa.js';
+import { CONFIRMADO_EM, POSTOS_ENTREGUES, TIPOS_E_POTENCIA, pinoDaBase, pinoDoGoogle } from './mapa.js';
 import { type Coordenada, type Posto, type PostoNaRota, decodificarLinha, linkGoogleMaps, planejarParadas } from './planejador.js';
 
 // Postos a até 5 km da linha da rota entram como candidatos a parada e a plano B.
@@ -31,7 +31,7 @@ b AS MATERIALIZED (
 SELECT (SELECT comprimento_m FROM linha) / 1000 AS distancia_km,
        (SELECT coalesce(json_agg(c ORDER BY c.km, c.id), '[]') FROM (
           SELECT b.id, b.origem, b.nome, b.lat, b.lng, b.provedor, b.licenca, b.data_fonte, b.situacao, b.funcionamento,
-                 b.data_observacao, b.verificado, b.acesso, b.gratuito, x.tipos, x.potencia_max_kw,
+                 b.data_observacao, b.verificado, b.acesso, b.gratuito, b.confirmado_em, x.tipos, x.potencia_max_kw,
                  ST_LineLocatePoint(l.plana, p.ponto) * l.comprimento_m / 1000 AS km,
                  ST_Distance(l.plana, p.ponto) / 1000 AS desvio_km
           FROM b, linha l, ${TIPOS_E_POTENCIA},
@@ -131,6 +131,12 @@ export class ViagensController {
       destino,
     });
 
+    // Check-ins de motoristas nos lugares do Google da rota (RN15 do app): só o dia, da base do REVOLT.
+    const ids = (lugares.lugares ?? []).map((l) => `google-${l.id}`);
+    const confirmados = ids.length
+      ? await this.db.query(`SELECT i.id, ${CONFIRMADO_EM('i.id')} FROM unnest($1::text[]) AS i(id)`, [ids])
+      : [];
+    const confirmadoEm = new Map(confirmados.map((c) => [c.id, c.confirmado_em]));
     const agora = new Date();
     return {
       disponivel: true,
@@ -155,7 +161,7 @@ export class ViagensController {
         disponivel: !lugares.motivo,
         motivo: lugares.motivo ?? null,
         mensagem: lugares.motivo ? MENSAGENS_LUGARES[lugares.motivo] : null,
-        eletropostos: (lugares.lugares ?? []).map((l) => pinoDoGoogle({ id: `google-${l.id}`, lat: l.lat, lng: l.lng, data_fonte: agora })),
+        eletropostos: (lugares.lugares ?? []).map((l) => pinoDoGoogle({ id: `google-${l.id}`, lat: l.lat, lng: l.lng, data_fonte: agora, confirmado_em: confirmadoEm.get(`google-${l.id}`) })),
       },
       link_externo: linkGoogleMaps(destino, origem, plano.paradas.map((p) => p.parada.posto.localizacao)),
     };

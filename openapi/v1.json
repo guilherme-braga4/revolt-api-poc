@@ -439,6 +439,20 @@
           "data"
         ]
       },
+      "ConfirmacaoMotorista": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação de motorista mais recente que o Curador não removeu."
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "CondicoesDeUso": {
         "type": "object",
         "properties": {
@@ -560,6 +574,16 @@
           "verificacao": {
             "$ref": "#/components/schemas/Verificacao"
           },
+          "confirmacao_motorista": {
+            "nullable": true,
+            "description": "Check-in de motorista (RN15 do app): mostrar \"confirmado por motorista\", à parte da verificação em campo. null quando não há.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmacaoMotorista"
+              }
+            ]
+          },
           "atualizado_em": {
             "type": "string",
             "format": "date",
@@ -581,6 +605,7 @@
           "gratuito",
           "origem",
           "verificacao",
+          "confirmacao_motorista",
           "atualizado_em",
           "condicoes_de_uso"
         ]
@@ -1353,6 +1378,90 @@
           "disponibilidade"
         ]
       },
+      "ContribuicaoNaFicha": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": [
+              "observacao_motorista"
+            ],
+            "description": "Origem da informação: distinta da verificação em campo do Curador (RN15 do app)."
+          },
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão)."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true,
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou."
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.",
+            "example": null
+          },
+          "corrigida": {
+            "type": "boolean",
+            "description": "O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos."
+          }
+        },
+        "required": [
+          "origem",
+          "data",
+          "carregou",
+          "conector",
+          "funcionou",
+          "potencia_kw",
+          "preco",
+          "estava_como_informado",
+          "foto",
+          "corrigida"
+        ]
+      },
       "Ficha": {
         "type": "object",
         "properties": {
@@ -1386,6 +1495,23 @@
           "atributos": {
             "$ref": "#/components/schemas/Atributos"
           },
+          "confirmacao_motorista": {
+            "nullable": true,
+            "description": "Check-in de motorista mais recente (RN15 do app), à parte da verificação em campo. null quando não há.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmacaoMotorista"
+              }
+            ]
+          },
+          "contribuicoes": {
+            "description": "Até 10 observações de motoristas, das mais recentes, sem as removidas pelo Curador.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContribuicaoNaFicha"
+            }
+          },
           "lugar_vinculado": {
             "type": "string",
             "nullable": true,
@@ -1406,6 +1532,8 @@
           "atualizado_em",
           "condicoes_de_uso",
           "atributos",
+          "confirmacao_motorista",
+          "contribuicoes",
           "lugar_vinculado",
           "link_externo"
         ]

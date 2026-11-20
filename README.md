@@ -108,6 +108,7 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 
 - `id` é `ocm-<id do OCM>`, `propria-<id do registro próprio>` ou `google-<place_id>`.
 - Cada atributo vem como `{ "valor", "origem", "data" }`. `valor: null` quer dizer "não informado". A verificação em campo vigente vence o dado da fonte, atributo por atributo.
+- **Observações de motoristas (Alteração 6 da obtenção):** `contribuicoes` traz até 10 check-ins, dos mais recentes, com `origem: "observacao_motorista"`, a data da observação e o que o motorista viu, nunca o autor (RN12). `confirmacao_motorista` (`{ data }` ou null) está na ficha e em todo pino, inclusive nos lugares do Google, para o app mostrar "confirmado por motorista" à parte da verificação em campo (RN15). A observação nunca torna o posto verificado e não muda os atributos nem `atualizado_em`. As removidas pelo Curador saem da entrega. As recusadas (sem data, com data no futuro ou com campo fora da lista, como um dado do Google) são contadas para o Curador.
 - `lugar_vinculado` aponta o lugar do Google que o Curador confirmou ser o mesmo posto. `link_externo` abre o lugar no Google Maps, sem consulta paga, e só existe na ficha do Google.
 - Ficha do Google sem atestado: 401. Muitas fichas seguidas no mesmo aparelho: 429. Teto atingido, Google desligado ou fora do ar: 503. Nos dois últimos casos a resposta traz `link_externo`, para o app oferecer o Google Maps.
 
