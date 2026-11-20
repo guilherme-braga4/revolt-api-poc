@@ -12671,6 +12671,103 @@
             "header": [],
             "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14&conectores=TIPO_2"
           }
+        },
+        {
+          "name": "Preparar: vincular o lugar dubleA ao posto próprio ao lado (RF08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/postos-proprios/{{posto_e_id}}/vinculo-google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"dubleA\",\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Depois do vínculo, o mapa não mostra dubleA separado (RN17)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('dubleA não é entregue separado; dubleB continua', () => {",
+                  "  const ids = pm.response.json().pinos.map((p) => p.id);",
+                  "  pm.expect(ids).to.not.include('google-dubleA');",
+                  "  pm.expect(ids).to.include('google-dubleB');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Lugar do Google vinculado a um registro próprio continua na resposta da rota (Alt. 7 da obtenção, RN22)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "const google = r.eletropostos_google;",
+                  "pm.test('Lugares do Google da rota disponíveis', () => pm.expect([google.disponivel, google.motivo]).to.eql([true, null]));",
+                  "pm.test('dubleA, vinculado ao posto próprio, continua na lista, como lugar do Google', () => {",
+                  "  const a = google.eletropostos.find((e) => e.id === 'google-dubleA');",
+                  "  pm.expect(a, 'google-dubleA').to.be.an('object');",
+                  "  pm.expect(a.origem).to.eql('google');",
+                  "  pm.expect(a.condicoes_de_uso.exibicao).to.eql('somente_sobre_mapa_google');",
+                  "});",
+                  "pm.test('Os cinco lugares que a busca do Google devolveu', () =>",
+                  "  pm.expect(google.eletropostos.map((e) => e.id).sort()).to.eql(['google-dubleA', 'google-dubleB', 'google-dubleResende', 'google-dubleRota', 'google-dubleViagem']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 250\n}"
+            }
+          }
         }
       ]
     }
