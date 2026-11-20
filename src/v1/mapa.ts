@@ -28,7 +28,7 @@ export const OCM_E_PROPRIOS_LIGADOS = `(
   OR (origem = 'verificacao_propria' AND (SELECT ligada FROM fonte WHERE nome = 'propria')))`;
 
 // Postos de OCM e próprios que podem ser entregues, no vocabulário do REVOLT, com os dados da verificação vigente por cima
-// dos da fonte (RN13 da obtenção). O mapa e o planejador de viagem leem daqui e acrescentam o seu recorte com AND.
+// dos da fonte (RN13 da obtenção). Sem o registro que o Curador confirmou ser duplicado de outro (UC08 do app). O mapa e o planejador de viagem leem daqui e acrescentam o seu recorte com AND.
 export const POSTOS_ENTREGUES = `
   SELECT e.id, e.origem, e.nome, e.lat, e.lng, e.provedor, e.licenca, e.data_fonte, e.situacao, e.funcionamento, e.data_observacao,
          v.vigente AS verificado,
@@ -39,7 +39,7 @@ export const POSTOS_ENTREGUES = `
   FROM eletroposto e,
        LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v,
        LATERAL (SELECT CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco) p
-  WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS}`;
+  WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS} AND e.id NOT IN (SELECT oculto FROM vinculo_duplicado)`;
 
 // Tipos de conector e maior potência de cada posto, a partir dos conectores de um POSTOS_ENTREGUES chamado b.
 export const TIPOS_E_POTENCIA = `
@@ -50,6 +50,7 @@ export const TIPOS_E_POTENCIA = `
 // view já corta as de mais de 30 dias), a mais de 100 m de um posto do OCM entregue e sem vínculo com um item entregue.
 export const LUGARES_GOOGLE_ENTREGAVEIS = `
   origem = 'google' AND (SELECT ligada FROM fonte WHERE nome = 'google') AND NOT duplicado_do_ocm
+  AND id NOT IN (SELECT oculto FROM vinculo_duplicado)
   AND google_place_id NOT IN (
     SELECT google_place_id FROM eletroposto WHERE origem <> 'google' AND google_place_id IS NOT NULL AND ${OCM_E_PROPRIOS_LIGADOS})`;
 

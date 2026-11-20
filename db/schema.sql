@@ -366,3 +366,24 @@ CREATE TABLE IF NOT EXISTS reporte_envio (
   foto_id uuid REFERENCES foto (id) ON DELETE SET NULL,
   enviado_em timestamptz NOT NULL DEFAULT now()
 );
+
+-- Decisões do Curador na moderação (UC08 e RF11 do app): cada uma com data, motivo e alvo. Na correção, dados guarda os
+-- valores originais; a observação passa a ter os corrigidos.
+CREATE TABLE IF NOT EXISTS decisao (
+  id serial PRIMARY KEY,
+  tipo text NOT NULL,
+  alvo text NOT NULL, -- 'contribuicao <id>', 'foto <id>', 'reporte <id>' ou 'conta <id>'
+  motivo text NOT NULL,
+  dados jsonb,
+  curador_conta_id integer REFERENCES conta (id) ON DELETE SET NULL,
+  decidida_em timestamptz NOT NULL DEFAULT now()
+);
+
+-- Duplicados confirmados pelo Curador (UC08 do app): o registro oculto deixa de sair no mapa e no planejador. Os dois
+-- registros continuam como vieram das fontes, sem fusão (vínculo de registros do PRD de obtenção).
+CREATE TABLE IF NOT EXISTS vinculo_duplicado (
+  oculto text PRIMARY KEY,
+  mantido text NOT NULL,
+  decisao_id integer NOT NULL REFERENCES decisao (id),
+  criado_em timestamptz NOT NULL DEFAULT now()
+);

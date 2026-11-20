@@ -81,7 +81,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));",
-                  "pm.collectionVariables.unset('atestado'); // as chaves do apoio mudam a cada vez que ele sobe"
+                  "pm.collectionVariables.unset('atestado'); // as chaves do apoio mudam a cada vez que ele sobe",
+                  "pm.collectionVariables.unset('conta_curador');"
                 ]
               }
             }
@@ -104,7 +105,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens/planejar']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens/planejar']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -2745,7 +2746,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 400', () => pm.response.to.have.status(400));",
-                  "pm.sendRequest(pm.variables.get('base_url') + '/postos-proprios/' + pm.collectionVariables.get('posto_id'), (e, r) => {",
+                  "pm.sendRequest({ url: pm.variables.get('base_url') + '/postos-proprios/' + pm.collectionVariables.get('posto_id'), header: { Authorization: 'Bearer ' + pm.collectionVariables.get('conta_curador') } }, (e, r) => {",
                   "  pm.test('Recusas não gravaram nada: continuam 2 verificações', () => pm.expect(r.json().verificacoes).to.have.length(2));",
                   "});"
                 ]
@@ -7766,6 +7767,1040 @@
             ],
             "url": "{{base_url}}/v1/reportes/meus"
           }
+        },
+        {
+          "name": "[sem conta] Rota de controle sem conta é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Conta necessária', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Rota de controle com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Papel de Curador necessário', () => pm.expect(pm.response.json().erro).to.eql('papel_curador_necessario'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Verificação em campo com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Motorista\",\n  \"data_observacao\": \"2026-11-20\",\n  \"localizacao\": {\n    \"lat\": -22.7,\n    \"lng\": -45.1\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Atualização do OCM com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "[sem conta] Fila do Curador sem conta é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Fila do Curador com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Papel de Curador necessário', () => pm.expect(pm.response.json().erro).to.eql('papel_curador_necessario'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Fila do Curador: reportes dos mais antigos, postos com mais reportes, contribuições e contagens (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Reportes abertos, do mais antigo: o duplicado com os dois postos, depois o de preço', () => {",
+                  "  pm.expect(f.reportes.map((r) => [r.tipo, r.eletroposto_id, r.outro_eletroposto_id])).to.eql([['duplicado', 'ocm-9108', 'ocm-9109'], ['preco_errado', 'ocm-9105', null]]);",
+                  "  pm.expect(f.reportes[0].envios.map((e) => e.detalhe)).to.eql(['Parece o mesmo posto de Resende', 'Mesmo endereço']);",
+                  "});",
+                  "pm.test('Postos com mais reportes abertos', () => pm.expect(f.postos_com_mais_reportes).to.eql([{ eletroposto_id: 'ocm-9105', abertos: 1 }, { eletroposto_id: 'ocm-9108', abertos: 1 }]));",
+                  "pm.test('Contribuições sem decisão, das mais recentes', () => pm.expect(f.contribuicoes.map((c) => c.eletroposto_id)).to.eql(['google-dubleViagem', 'propria-1', 'ocm-9105']));",
+                  "pm.test('Contagens de observações recebidas, recusadas e removidas (Alteração 6)', () => pm.expect(f.observacoes).to.eql({ recebidas: 3, recusadas: 3, removidas: 0 }));",
+                  "pm.collectionVariables.set('conta_b', f.reportes[0].envios[1].conta_id);",
+                  "pm.collectionVariables.set('contrib_a2', f.contribuicoes[1].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Decisão sem motivo é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"aceitar_contribuicao\",\n  \"contribuicao_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Decisão com conta de motorista é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"aceitar_contribuicao\",\n  \"contribuicao_id\": 1,\n  \"motivo\": \"x\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Corrigir uma contribuição, com motivo (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.test('Decisão registrada sobre a contribuição', () => pm.expect(pm.response.json()).to.include({ tipo: 'corrigir_contribuicao', alvo: 'contribuicao ' + pm.collectionVariables.get('contrib_a1') }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"corrigir_contribuicao\",\n  \"contribuicao_id\": {{contrib_a1}},\n  \"motivo\": \"Conferido com a rede\",\n  \"valores\": {\n    \"potencia_kw\": 50,\n    \"preco\": \"R$ 2,00/kWh\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "A ficha mostra os valores corrigidos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Valores corrigidos, marcados como correção', () =>",
+                  "  pm.expect(pm.response.json().contribuicoes[0]).to.include({ potencia_kw: 50, preco: 'R$ 2,00/kWh', corrigida: true, conector: 'CCS2' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "O registro da decisão guarda os valores originais, a data, o motivo e o Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().find((d) => d.tipo === 'corrigir_contribuicao');",
+                  "pm.test('Originais, motivo, data e Curador', () => {",
+                  "  pm.expect(d.dados).to.eql({ originais: { potencia_kw: 47.5, preco: 'R$ 2,10/kWh' } });",
+                  "  pm.expect(d.motivo).to.eql('Conferido com a rede');",
+                  "  pm.expect(d.decidida_em).to.be.a('string');",
+                  "  pm.expect(d.curador_conta_id).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/decisao"
+          }
+        },
+        {
+          "name": "Correção sem nenhum valor é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"corrigir_contribuicao\", \"contribuicao_id\": 1, \"motivo\": \"x\", \"valores\": {}}"
+            }
+          }
+        },
+        {
+          "name": "Correção que apaga um valor obrigatório é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"corrigir_contribuicao\", \"contribuicao_id\": 1, \"motivo\": \"x\", \"valores\": {\"carregou\": null}}"
+            }
+          }
+        },
+        {
+          "name": "Aceitar uma contribuição",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"aceitar_contribuicao\", \"contribuicao_id\": {{contrib_a2}}, \"motivo\": \"Confere com a verificação\"}"
+            }
+          }
+        },
+        {
+          "name": "Remover a foto do check-in do motorista B",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('foto_id_b', pm.collectionVariables.get('foto_b').split('/').pop());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_foto\", \"foto_id\": \"{{foto_id_b}}\", \"motivo\": \"Foto mostra a placa de um carro\"}"
+            }
+          }
+        },
+        {
+          "name": "Foto removida pelo Curador não é mais entregue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}{{foto_b}}"
+          }
+        },
+        {
+          "name": "Remover a contribuição do motorista B, com motivo (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"contribuicao_id\": {{contrib_b1}}, \"motivo\": \"Check-in em posto onde a conta não esteve\"}"
+            }
+          }
+        },
+        {
+          "name": "Contribuição removida sai da ficha (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Sem contribuições nem confirmação de motorista', () => {",
+                  "  pm.expect(f.contribuicoes).to.eql([]);",
+                  "  pm.expect(f.confirmacao_motorista).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleViagem"
+          }
+        },
+        {
+          "name": "Remover de novo a mesma contribuição: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"contribuicao_id\": {{contrib_b1}}, \"motivo\": \"de novo\"}"
+            }
+          }
+        },
+        {
+          "name": "Fila depois das decisões: sem as contribuições decididas, com a removida contada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const f = pm.response.json();",
+                  "pm.test('Nenhuma contribuição pendente', () => pm.expect(f.contribuicoes).to.eql([]));",
+                  "pm.test('Uma removida', () => pm.expect(f.observacoes).to.eql({ recebidas: 3, recusadas: 3, removidas: 1 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/fila"
+          }
+        },
+        {
+          "name": "Mapa de Resende antes da decisão: os dois postos reportados como duplicados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Os dois postos', () => pm.expect(pm.response.json().pinos.map((p) => p.id)).to.include.members(['ocm-9108', 'ocm-9109']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-44.49,-22.49,-44.43,-22.46&zoom=14"
+          }
+        },
+        {
+          "name": "Duplicado confirmado só vale para reporte de duplicado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_preco}}, \"resolucao\": \"duplicado_confirmado\", \"manter\": \"ocm-9105\", \"motivo\": \"x\"}"
+            }
+          }
+        },
+        {
+          "name": "Confirmar o duplicado, mantendo um dos postos (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_dup}}, \"resolucao\": \"duplicado_confirmado\", \"manter\": \"ocm-9108\", \"motivo\": \"Mesmo posto, dois cadastros no OCM\"}"
+            }
+          }
+        },
+        {
+          "name": "Mapa de Resende: um só posto (UC08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().pinos.map((p) => p.id);",
+                  "pm.test('Só o posto mantido', () => {",
+                  "  pm.expect(ids).to.include('ocm-9108');",
+                  "  pm.expect(ids).to.not.include('ocm-9109');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-44.49,-22.49,-44.43,-22.46&zoom=14"
+          }
+        },
+        {
+          "name": "Os dois registros continuam na base, sem fusão: vínculo de duplicado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Oculto e mantido', () => pm.expect(pm.response.json().map((v) => [v.oculto, v.mantido])).to.eql([['ocm-9109', 'ocm-9108']]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/vinculo_duplicado"
+          }
+        },
+        {
+          "name": "O planejador deixa de usar o posto oculto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const usados = r.paradas.flatMap((p) => [p.eletroposto.id, p.plano_b && p.plano_b.eletroposto.id]);",
+                  "pm.test('Viagem disponível, sem o posto oculto', () => {",
+                  "  pm.expect(r.disponivel).to.eql(true);",
+                  "  pm.expect(usados).to.not.include('ocm-9109');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "secao-12"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Meus reportes: a motorista A vê o duplicado resolvido (UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const dup = r.find((x) => x.tipo === 'duplicado');",
+                  "pm.test('Resolvido, com a resolução do Curador', () => {",
+                  "  pm.expect(dup).to.include({ situacao: 'resolvido', resolucao: 'duplicado_confirmado' });",
+                  "  pm.expect(dup.resolvido_em).to.be.a('string');",
+                  "});",
+                  "pm.test('O de preço continua aberto', () => pm.expect(r.find((x) => x.tipo === 'preco_errado').situacao).to.eql('aberto'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Resolver de novo o mesmo reporte: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_dup}}, \"resolucao\": \"improcedente\", \"motivo\": \"x\"}"
+            }
+          }
+        },
+        {
+          "name": "Resolver o reporte de preço com verificação em campo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"resolver_reporte\", \"reporte_id\": {{reporte_preco}}, \"resolucao\": \"verificacao_em_campo\", \"motivo\": \"Preço conferido no local\"}"
+            }
+          }
+        },
+        {
+          "name": "Bloquear a conta do motorista B (contribuidor abusivo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"bloquear_conta\", \"conta_id\": {{conta_b}}, \"motivo\": \"Check-ins falsos\"}"
+            }
+          }
+        },
+        {
+          "name": "A conta bloqueada sabe que não pode mais contribuir (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Bloqueada', () => pm.expect(pm.response.json()).to.eql({ id: 'motorista-b', papel: 'motorista', bloqueada: true }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Conta bloqueada não consegue fazer check-in (RF11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Conta bloqueada', () => pm.expect(pm.response.json().erro).to.eql('conta_bloqueada'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"00000010-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-15\",\n  \"carregou\": true,\n  \"conector\": \"CCS2\",\n  \"funcionou\": true,\n  \"potencia_kw\": 47.5,\n  \"preco\": \"R$ 2,10/kWh\",\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Conta bloqueada não consegue reportar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eletroposto_id\": \"ocm-9105\",\n  \"tipo\": \"fora_de_servico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Conta bloqueada continua vendo os próprios reportes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Bloquear de novo a mesma conta: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"bloquear_conta\", \"conta_id\": {{conta_b}}, \"motivo\": \"de novo\"}"
+            }
+          }
         }
       ]
     }
@@ -7793,6 +8828,30 @@
           "      (erro, r) => {",
           "        pm.collectionVariables.set('atestado', r.json().token);",
           "        usar(r.json().token);",
+          "      },",
+          "    );",
+          "}",
+          "",
+          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle) exigem a conta do Curador: todo pedido",
+          "// leva o token de conta do dublê do login com o identificador de CURADOR_CONTAS, menos os marcados com \"[sem conta]\" no nome",
+          "// e os que já trazem o seu próprio Authorization (testes de conta sem papel de Curador).",
+          "const urlDoPedido = pm.variables.replaceIn(pm.request.url.toString());",
+          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle)(\\/|$)/.test(pm.request.url.getPath())",
+          "    && !pm.info.requestName.includes('[sem conta]') && !pm.request.headers.has('Authorization')) {",
+          "  const usarConta = (token) => pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
+          "  const guardada = pm.collectionVariables.get('conta_curador');",
+          "  if (guardada) usarConta(guardada);",
+          "  else",
+          "    pm.sendRequest(",
+          "      {",
+          "        url: pm.variables.get('apoio_url') + '/__apoio/token',",
+          "        method: 'POST',",
+          "        header: { 'Content-Type': 'application/json' },",
+          "        body: { mode: 'raw', raw: JSON.stringify({ tipo: 'conta', sub: 'curador-teste' }) },",
+          "      },",
+          "      (erro, r) => {",
+          "        pm.collectionVariables.set('conta_curador', r.json().token);",
+          "        usarConta(r.json().token);",
           "      },",
           "    );",
           "}"

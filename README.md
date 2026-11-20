@@ -142,6 +142,19 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - O mesmo problema já aberto (posto, tipo e, no duplicado, o outro posto) recebe mais um envio, sem criar outro reporte: a resposta traz `somado_a_aberto` e `envios`.
 - `GET /v1/reportes/meus` lista os últimos 100 envios da conta, com `situacao` (`aberto` ou `resolvido`) e, depois de resolvido, a `resolucao` do Curador.
 
+**Moderação (`GET /v1/curador/fila` e `POST /v1/curador/decisoes`, conta de Curador)**
+
+- A fila traz os reportes abertos, dos mais antigos, com cada envio (conta, detalhe e foto); os 10 postos com mais reportes abertos; as contribuições ainda sem decisão de aceitar ou corrigir; e as contagens de observações recebidas, recusadas e removidas (Alteração 6).
+- Toda decisão leva `tipo` e `motivo`, e fica registrada com a data e a conta do Curador. Tipos:
+  - `aceitar_contribuicao` (`contribuicao_id`): só tira da fila;
+  - `corrigir_contribuicao` (`contribuicao_id`, `valores`): a ficha passa a mostrar os valores corrigidos, com `corrigida: true`, e os originais ficam no registro da decisão;
+  - `remover_contribuicao` (`contribuicao_id`): a contribuição sai da ficha e a confirmação de motorista é recalculada;
+  - `remover_foto` (`foto_id`): a foto é apagada e `GET /v1/fotos/:id` passa a responder 404;
+  - `resolver_reporte` (`reporte_id`, `resolucao`): `duplicado_confirmado` (só para reporte de duplicado, com `manter`, um dos dois postos), `inexistente`, `acesso_restrito`, `verificacao_em_campo` ou `improcedente`. O motorista vê a resolução em `GET /v1/reportes/meus`;
+  - `bloquear_conta` (`conta_id`, que vem na fila): a conta deixa de contribuir (403 `conta_bloqueada`), mas continua vendo os próprios reportes.
+- **Duplicado confirmado:** os dois registros continuam na base, sem fusão. Um vínculo marca o outro posto como oculto, e o mapa e o planejador deixam de mostrá-lo. Vale para OCM×OCM, próprio×OCM e lugar do Google.
+- Alvo inexistente ou já decidido (contribuição removida, reporte resolvido, conta já bloqueada): 404. Sem conta: 401. Conta sem papel de Curador: 403 `papel_curador_necessario`.
+
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 **Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.
@@ -218,7 +231,7 @@ curl -X POST localhost:3333/google/varredura -H 'Content-Type: application/json'
 
 ## Endpoints do Curador e da operação
 
-Estes endpoints não são para o app. **Eles ainda não têm autenticação:** antes de publicar a API, precisam ficar atrás da conta com papel de Curador (Fase 3) ou fora da internet.
+Estes endpoints não são para o app. Desde a Fase 3, todos exigem a conta com papel de Curador (`Authorization: Bearer <token>` de uma conta listada em `CURADOR_CONTAS`). Sem conta: 401 `conta_necessaria`. Conta sem o papel: 403 `papel_curador_necessario`. Na coleção, o script da coleção pede ao dublê do login o token da conta `curador-teste` e o põe em todo pedido a essas rotas.
 
 | Método e caminho | O que faz | RF |
 |---|---|---|
@@ -298,12 +311,16 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 - **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação, tipo de conector e acesso, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
 - **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do app junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
 - **Excluir dados:** também desliga a fonte ou o provedor, para que os dados não voltem na próxima atualização.
+- **Moderação (Fase 3):** uma tabela de decisões guarda tipo, alvo, motivo, data, Curador e, na correção, os valores originais. A correção muda a observação e a marca como corrigida; o duplicado confirmado cria um vínculo (`vinculo_duplicado`: oculto e mantido), sem fundir dados, e o posto oculto sai do mapa, do planejador e das paradas. O efeito e o registro da decisão são uma instrução só no banco.
+
+## Pendentes (decisão do Guilherme)
+
+- **Token do Curador:** as rotas do Curador e da operação aceitam só o token do login gerenciado de uma conta em `CURADOR_CONTAS`. Enquanto o login do app (D-04) não existe, só o dublê da coleção emite esse token. Para o Curador real usar essas rotas, falta definir como ele obtém um token do Firebase (entrar pelo app e copiar o token, ou uma tela própria). Até lá, a escolha mais simples e reversível: a API não abre outro caminho de acesso, e as rotas ficam fechadas para quem não tem esse token.
 
 ## Fora desta fase
 
 - Viagens salvas com conta (`GET/POST/PUT/DELETE /v1/viagens`, Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
 - Planejador: a telemetria do UC04 (viagens planejadas, trechos sem cobertura e paradas sem plano B); o acesso restrito, que hoje não impede um posto de virar parada; e mais de 9 paradas no link do Google Maps.
-- Autenticação das rotas do Curador e da operação: depende do papel de Curador (Fase 3). Bloqueia a publicação.
 - Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
 - Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).
 - Separação do banco em esquemas de obtenção e de app: as tabelas continuam no `public`.

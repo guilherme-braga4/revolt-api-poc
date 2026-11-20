@@ -131,12 +131,18 @@ export class ViagensController {
       destino,
     });
 
-    // Check-ins de motoristas nos lugares do Google da rota (RN15 do app): só o dia, da base do REVOLT.
+    // Da base do REVOLT, para os lugares do Google da rota: check-in de motorista (RN15 do app) e duplicado confirmado pelo
+    // Curador, que não sai (UC08 do app).
     const ids = (lugares.lugares ?? []).map((l) => `google-${l.id}`);
-    const confirmados = ids.length
-      ? await this.db.query(`SELECT i.id, ${CONFIRMADO_EM('i.id')} FROM unnest($1::text[]) AS i(id)`, [ids])
+    const daBase = ids.length
+      ? await this.db.query(
+          `SELECT i.id, ${CONFIRMADO_EM('i.id')}, EXISTS (SELECT 1 FROM vinculo_duplicado v WHERE v.oculto = i.id) AS oculto
+           FROM unnest($1::text[]) AS i(id)`,
+          [ids],
+        )
       : [];
-    const confirmadoEm = new Map(confirmados.map((c) => [c.id, c.confirmado_em]));
+    const confirmadoEm = new Map(daBase.map((c) => [c.id, c.confirmado_em]));
+    const ocultos = new Set(daBase.filter((c) => c.oculto).map((c) => c.id));
     const agora = new Date();
     return {
       disponivel: true,
@@ -161,7 +167,7 @@ export class ViagensController {
         disponivel: !lugares.motivo,
         motivo: lugares.motivo ?? null,
         mensagem: lugares.motivo ? MENSAGENS_LUGARES[lugares.motivo] : null,
-        eletropostos: (lugares.lugares ?? []).map((l) => pinoDoGoogle({ id: `google-${l.id}`, lat: l.lat, lng: l.lng, data_fonte: agora, confirmado_em: confirmadoEm.get(`google-${l.id}`) })),
+        eletropostos: (lugares.lugares ?? []).filter((l) => !ocultos.has(`google-${l.id}`)).map((l) => pinoDoGoogle({ id: `google-${l.id}`, lat: l.lat, lng: l.lng, data_fonte: agora, confirmado_em: confirmadoEm.get(`google-${l.id}`) })),
       },
       link_externo: linkGoogleMaps(destino, origem, plano.paradas.map((p) => p.parada.posto.localizacao)),
     };

@@ -535,3 +535,88 @@ export class MeuReporte {
   @ApiProperty({ type: String, format: 'date-time', nullable: true }) resolvido_em: string | null;
 }
 
+// ---------- Moderação do Curador (UC08, RF11) ----------
+
+export class EnvioNaFila {
+  @ApiProperty({ type: 'integer', nullable: true, description: 'Conta que enviou, para bloquear se for abuso. null depois que a conta foi excluída.' })
+  conta_id: number | null;
+  @ApiProperty({ type: String, nullable: true }) detalhe: string | null;
+  @ApiProperty({ type: String, nullable: true }) foto: string | null;
+  @ApiProperty({ format: 'date-time' }) enviado_em: string;
+}
+
+export class ReporteNaFila {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ enum: TIPOS_REPORTE }) tipo: string;
+  @ApiProperty({ type: String, nullable: true, description: 'No duplicado, o outro posto.' }) outro_eletroposto_id: string | null;
+  @ApiProperty({ format: 'date-time' }) aberto_em: string;
+  @ApiProperty({ type: 'integer', description: 'Reportes abertos do mesmo posto.' }) abertos_no_posto: number;
+  @ApiProperty({ type: [EnvioNaFila] }) envios: EnvioNaFila[];
+}
+
+export class PostoComReportes {
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ type: 'integer' }) abertos: number;
+}
+
+export class ContribuicaoNaFila extends ContribuicaoNaFicha {
+  @ApiProperty({ type: 'integer', description: 'Identificador da contribuição, para a decisão.' }) id: number;
+  @ApiProperty({ type: 'integer', nullable: true, description: 'Conta que enviou. null depois que a conta foi excluída.' }) conta_id: number | null;
+  @ApiProperty({ example: 'ocm-9001' }) eletroposto_id: string;
+  @ApiProperty({ format: 'date-time' }) recebida_em: string;
+}
+
+export class ContagemObservacoes {
+  @ApiProperty({ type: 'integer', description: 'Observações de motoristas recebidas.' }) recebidas: number;
+  @ApiProperty({ type: 'integer', description: 'Check-ins recusados (sem data, data no futuro, campo fora da lista).' }) recusadas: number;
+  @ApiProperty({ type: 'integer', description: 'Observações removidas pelo Curador.' }) removidas: number;
+}
+
+export class FilaCurador {
+  @ApiProperty({ type: [ReporteNaFila], description: 'Reportes abertos, dos mais antigos (até 100).' }) reportes: ReporteNaFila[];
+  @ApiProperty({ type: [PostoComReportes], description: 'Os 10 postos com mais reportes abertos.' }) postos_com_mais_reportes: PostoComReportes[];
+  @ApiProperty({ type: [ContribuicaoNaFila], description: 'Contribuições ainda sem decisão, das mais recentes (até 50).' }) contribuicoes: ContribuicaoNaFila[];
+  @ApiProperty({ type: ContagemObservacoes }) observacoes: ContagemObservacoes;
+}
+
+export const TIPOS_DECISAO = ['aceitar_contribuicao', 'corrigir_contribuicao', 'remover_contribuicao', 'remover_foto', 'resolver_reporte', 'bloquear_conta'];
+export const CAMPOS_CORRIGIVEIS = ['carregou', 'conector', 'funcionou', 'potencia_kw', 'preco', 'estava_como_informado'];
+
+// Valores corrigidos pelo Curador. null apaga um valor opcional.
+export class CorrecaoContribuicao {
+  @ApiProperty({ required: false }) @ValidateIf((o) => o.carregou !== undefined) @IsBoolean() carregou?: boolean;
+  @ApiProperty({ required: false, enum: TIPOS_CONECTOR, nullable: true }) @IsOptional() @IsIn(TIPOS_CONECTOR) conector?: string | null;
+  @ApiProperty({ required: false, nullable: true }) @IsOptional() @IsBoolean() funcionou?: boolean | null;
+  @ApiProperty({ required: false, nullable: true, minimum: 0.1, maximum: 1000 })
+  @IsOptional() @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0.1) @Max(1000) potencia_kw?: number | null;
+  @ApiProperty({ required: false, nullable: true, maxLength: 200 }) @IsOptional() @IsString() @MaxLength(200) preco?: string | null;
+  @ApiProperty({ required: false, enum: ['sim', 'nao'] })
+  @ValidateIf((o) => o.estava_como_informado !== undefined) @IsIn(['sim', 'nao']) estava_como_informado?: string;
+}
+
+const PARA = (...tipos: string[]) => (o) => tipos.includes(o.tipo);
+
+export class PedidoDecisao {
+  @ApiProperty({ enum: TIPOS_DECISAO }) @IsIn(TIPOS_DECISAO) tipo: string;
+  @ApiProperty({ maxLength: 500, description: 'Motivo, guardado com a decisão.' }) @IsString() @MaxLength(500) @Matches(/\S/, { message: 'motivo é obrigatório' }) motivo: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Nas decisões sobre contribuição.' })
+  @ValidateIf(PARA('aceitar_contribuicao', 'corrigir_contribuicao', 'remover_contribuicao')) @IsInt() contribuicao_id?: number;
+  @ApiProperty({ required: false, type: CorrecaoContribuicao, description: 'Em corrigir_contribuicao: os valores corrigidos.' })
+  @ValidateIf(PARA('corrigir_contribuicao')) @IsDefined() @ValidateNested() @Type(() => CorrecaoContribuicao) valores?: CorrecaoContribuicao;
+  @ApiProperty({ required: false, format: 'uuid', description: 'Em remover_foto.' }) @ValidateIf(PARA('remover_foto')) @IsUUID() foto_id?: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Em resolver_reporte.' }) @ValidateIf(PARA('resolver_reporte')) @IsInt() reporte_id?: number;
+  @ApiProperty({ required: false, enum: RESOLUCOES_REPORTE, description: 'Em resolver_reporte.' })
+  @ValidateIf(PARA('resolver_reporte')) @IsIn(RESOLUCOES_REPORTE) resolucao?: string;
+  @ApiProperty({ ...ID_ELETROPOSTO_DOC, required: false, description: 'Em duplicado_confirmado: qual dos dois postos continua no mapa. O outro fica oculto.' })
+  @ValidateIf((o) => o.resolucao === 'duplicado_confirmado') @Matches(ID_ELETROPOSTO) manter?: string;
+  @ApiProperty({ required: false, type: 'integer', description: 'Em bloquear_conta.' }) @ValidateIf(PARA('bloquear_conta')) @IsInt() conta_id?: number;
+}
+
+export class DecisaoRegistrada {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ enum: TIPOS_DECISAO }) tipo: string;
+  @ApiProperty({ example: 'contribuicao 12' }) alvo: string;
+  @ApiProperty({ format: 'date-time' }) decidida_em: string;
+}
+

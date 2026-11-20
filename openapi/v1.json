@@ -620,6 +620,132 @@
           "contribuicoes"
         ]
       }
+    },
+    "/v1/curador/fila": {
+      "get": {
+        "description": "Reportes abertos dos mais antigos, postos com mais reportes abertos, contribuições ainda sem decisão e as contagens de observações.",
+        "operationId": "CuradorController_fila",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FilaCurador"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fila de moderação",
+        "tags": [
+          "curador"
+        ]
+      }
+    },
+    "/v1/curador/decisoes": {
+      "post": {
+        "description": "Aceitar, corrigir ou remover uma contribuição, remover uma foto, resolver um reporte ou bloquear uma conta, sempre com motivo. Remover tira a contribuição da ficha. Corrigir faz a ficha mostrar os valores corrigidos e guarda os originais no registro. O duplicado confirmado oculta um dos dois postos no mapa e no planejador, sem fundir os dados. O motorista que reportou vê a resolução.",
+        "operationId": "CuradorController_decidir",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoDecisao"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisaoRegistrada"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Alvo inexistente ou já decidido (contribuição removida, reporte resolvido, conta já bloqueada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Registrar uma decisão",
+        "tags": [
+          "curador"
+        ]
+      }
     }
   },
   "info": {
@@ -2482,6 +2608,409 @@
           "situacao",
           "resolucao",
           "resolvido_em"
+        ]
+      },
+      "EnvioNaFila": {
+        "type": "object",
+        "properties": {
+          "conta_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Conta que enviou, para bloquear se for abuso. null depois que a conta foi excluída."
+          },
+          "detalhe": {
+            "type": "string",
+            "nullable": true
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true
+          },
+          "enviado_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "conta_id",
+          "detalhe",
+          "foto",
+          "enviado_em"
+        ]
+      },
+      "ReporteNaFila": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "inexistente",
+              "acesso_restrito",
+              "duplicado",
+              "preco_errado",
+              "fora_de_servico",
+              "outro"
+            ]
+          },
+          "outro_eletroposto_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "No duplicado, o outro posto."
+          },
+          "aberto_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "abertos_no_posto": {
+            "type": "integer",
+            "description": "Reportes abertos do mesmo posto."
+          },
+          "envios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvioNaFila"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "eletroposto_id",
+          "tipo",
+          "outro_eletroposto_id",
+          "aberto_em",
+          "abertos_no_posto",
+          "envios"
+        ]
+      },
+      "PostoComReportes": {
+        "type": "object",
+        "properties": {
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "abertos": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eletroposto_id",
+          "abertos"
+        ]
+      },
+      "ContribuicaoNaFila": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": [
+              "observacao_motorista"
+            ],
+            "description": "Origem da informação: distinta da verificação em campo do Curador (RN15 do app)."
+          },
+          "data": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia da observação, informado pelo motorista (o check-in pode ser enviado depois, sem conexão)."
+          },
+          "carregou": {
+            "type": "boolean",
+            "description": "O motorista carregou."
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true,
+            "description": "Conector usado."
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "O carregador funcionou."
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "description": "Potência vista, em kW."
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "description": "Preço visto, em texto livre."
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ],
+            "description": "O posto estava como o app informou."
+          },
+          "foto": {
+            "type": "string",
+            "nullable": true,
+            "description": "Caminho da foto (GET /v1/fotos/{id}), sem autor. null sem foto.",
+            "example": null
+          },
+          "corrigida": {
+            "type": "boolean",
+            "description": "O Curador corrigiu valores desta observação; a ficha mostra os valores corrigidos."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Identificador da contribuição, para a decisão."
+          },
+          "conta_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Conta que enviou. null depois que a conta foi excluída."
+          },
+          "eletroposto_id": {
+            "type": "string",
+            "example": "ocm-9001"
+          },
+          "recebida_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "origem",
+          "data",
+          "carregou",
+          "conector",
+          "funcionou",
+          "potencia_kw",
+          "preco",
+          "estava_como_informado",
+          "foto",
+          "corrigida",
+          "id",
+          "conta_id",
+          "eletroposto_id",
+          "recebida_em"
+        ]
+      },
+      "ContagemObservacoes": {
+        "type": "object",
+        "properties": {
+          "recebidas": {
+            "type": "integer",
+            "description": "Observações de motoristas recebidas."
+          },
+          "recusadas": {
+            "type": "integer",
+            "description": "Check-ins recusados (sem data, data no futuro, campo fora da lista)."
+          },
+          "removidas": {
+            "type": "integer",
+            "description": "Observações removidas pelo Curador."
+          }
+        },
+        "required": [
+          "recebidas",
+          "recusadas",
+          "removidas"
+        ]
+      },
+      "FilaCurador": {
+        "type": "object",
+        "properties": {
+          "reportes": {
+            "description": "Reportes abertos, dos mais antigos (até 100).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReporteNaFila"
+            }
+          },
+          "postos_com_mais_reportes": {
+            "description": "Os 10 postos com mais reportes abertos.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PostoComReportes"
+            }
+          },
+          "contribuicoes": {
+            "description": "Contribuições ainda sem decisão, das mais recentes (até 50).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContribuicaoNaFila"
+            }
+          },
+          "observacoes": {
+            "$ref": "#/components/schemas/ContagemObservacoes"
+          }
+        },
+        "required": [
+          "reportes",
+          "postos_com_mais_reportes",
+          "contribuicoes",
+          "observacoes"
+        ]
+      },
+      "CorrecaoContribuicao": {
+        "type": "object",
+        "properties": {
+          "carregou": {
+            "type": "boolean"
+          },
+          "conector": {
+            "type": "string",
+            "enum": [
+              "CCS2",
+              "CCS1",
+              "TIPO_2",
+              "TIPO_1",
+              "CHADEMO",
+              "GBT",
+              "TESLA",
+              "TOMADA",
+              "OUTRO",
+              "DESCONHECIDO"
+            ],
+            "nullable": true
+          },
+          "funcionou": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "potencia_kw": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0.1,
+            "maximum": 1000
+          },
+          "preco": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200
+          },
+          "estava_como_informado": {
+            "type": "string",
+            "enum": [
+              "sim",
+              "nao"
+            ]
+          }
+        }
+      },
+      "PedidoDecisao": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "aceitar_contribuicao",
+              "corrigir_contribuicao",
+              "remover_contribuicao",
+              "remover_foto",
+              "resolver_reporte",
+              "bloquear_conta"
+            ]
+          },
+          "motivo": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Motivo, guardado com a decisão."
+          },
+          "contribuicao_id": {
+            "type": "integer",
+            "description": "Nas decisões sobre contribuição."
+          },
+          "valores": {
+            "description": "Em corrigir_contribuicao: os valores corrigidos.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CorrecaoContribuicao"
+              }
+            ]
+          },
+          "foto_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Em remover_foto."
+          },
+          "reporte_id": {
+            "type": "integer",
+            "description": "Em resolver_reporte."
+          },
+          "resolucao": {
+            "type": "string",
+            "enum": [
+              "duplicado_confirmado",
+              "inexistente",
+              "acesso_restrito",
+              "verificacao_em_campo",
+              "improcedente"
+            ],
+            "description": "Em resolver_reporte."
+          },
+          "manter": {
+            "type": "string",
+            "example": "ocm-9001",
+            "pattern": "^(ocm-\\d+|propria-\\d+|google-[A-Za-z0-9_-]{1,300})$",
+            "description": "Em duplicado_confirmado: qual dos dois postos continua no mapa. O outro fica oculto."
+          },
+          "conta_id": {
+            "type": "integer",
+            "description": "Em bloquear_conta."
+          }
+        },
+        "required": [
+          "tipo",
+          "motivo"
+        ]
+      },
+      "DecisaoRegistrada": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "aceitar_contribuicao",
+              "corrigir_contribuicao",
+              "remover_contribuicao",
+              "remover_foto",
+              "resolver_reporte",
+              "bloquear_conta"
+            ]
+          },
+          "alvo": {
+            "type": "string",
+            "example": "contribuicao 12"
+          },
+          "decidida_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "alvo",
+          "decidida_em"
         ]
       }
     }
