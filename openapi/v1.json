@@ -358,6 +358,35 @@
         "tags": [
           "conta"
         ]
+      },
+      "delete": {
+        "description": "Apaga a conta, as viagens salvas e a ligação com as contribuições e os reportes, que continuam sem autor. Vale também para conta bloqueada. Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior. A exclusão no provedor de login é feita pelo app.",
+        "operationId": "ContaController_excluir",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Conta excluída."
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Excluir a conta",
+        "tags": [
+          "conta"
+        ]
       }
     },
     "/v1/checkins": {

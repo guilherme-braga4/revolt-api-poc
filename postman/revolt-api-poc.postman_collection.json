@@ -8801,6 +8801,257 @@
               "raw": "{\"tipo\": \"bloquear_conta\", \"conta_id\": {{conta_b}}, \"motivo\": \"de novo\"}"
             }
           }
+        },
+        {
+          "name": "[sem conta] Excluir conta sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Preparar: pseudônimo e conta da motorista A antes da exclusão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const a = pm.response.json().find((c) => c.sub === 'motorista-a');",
+                  "pm.collectionVariables.set('pseudonimo_a', a.pseudonimo);",
+                  "pm.collectionVariables.set('conta_a', a.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/conta"
+          }
+        },
+        {
+          "name": "Antes: o pseudônimo da motorista A é o autor das duas observações dela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Na conta e nas duas observações', () => pm.expect(pm.response.json().por_tabela).to.include({ conta: 1, observacao: 2 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto={{pseudonimo_a}}"
+          }
+        },
+        {
+          "name": "A motorista A exclui a conta (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "Nenhuma tabela guarda mais o identificador do login da motorista A (RF10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=motorista-a"
+          }
+        },
+        {
+          "name": "Nem o pseudônimo dela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto={{pseudonimo_a}}"
+          }
+        },
+        {
+          "name": "As observações continuam, cada uma com um autor sem ligação com a pessoa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const obs = pm.response.json();",
+                  "pm.test('As três observações continuam', () => pm.expect(obs.length).to.eql(3));",
+                  "pm.test('Autores todos diferentes: as observações dela não ficam agrupadas', () => pm.expect(new Set(obs.map((o) => o.autor)).size).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/observacao"
+          }
+        },
+        {
+          "name": "As contribuições dela continuam, sem conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const c = pm.response.json();",
+                  "pm.test('Três contribuições, as duas dela sem conta', () => {",
+                  "  pm.expect(c.length).to.eql(3);",
+                  "  pm.expect(c.filter((x) => x.conta_id === null).length).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/contribuicao"
+          }
+        },
+        {
+          "name": "Os envios de reporte dela continuam, sem conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const e = pm.response.json();",
+                  "pm.test('Nenhum envio com a conta excluída', () => pm.expect(e.filter((x) => x.conta_id === Number(pm.collectionVariables.get('conta_a')))).to.eql([]));",
+                  "pm.test('Os dois envios dela, sem conta', () => pm.expect(e.filter((x) => x.conta_id === null).length).to.eql(2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/reporte_envio"
+          }
+        },
+        {
+          "name": "A ficha continua com a contribuição dela, sem autor visível (RF10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const semAutor = (o) => ['autor', 'conta', 'conta_id', 'sub', 'pseudonimo', 'nome_autor', 'veiculo'].every((k) => !(k in o));",
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const f = pm.response.json();",
+                  "pm.test('A contribuição corrigida continua', () => pm.expect(f.contribuicoes[0]).to.include({ potencia_kw: 50, corrigida: true }));",
+                  "pm.test('Sem autor', () => pm.expect(f.contribuicoes.every(semAutor)).to.eql(true));",
+                  "pm.test('A confirmação de motorista continua', () => pm.expect(f.confirmacao_motorista).to.eql({ data: '2026-11-15' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9105"
+          }
+        },
+        {
+          "name": "Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nenhum reporte', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_a}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/reportes/meus"
+          }
         }
       ]
     }

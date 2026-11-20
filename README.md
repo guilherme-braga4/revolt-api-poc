@@ -164,6 +164,7 @@ Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a chave publicada, o emissor e o público.
 
 - **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir e salvar viagens. A primeira entrada cria a conta, que guarda só o identificador do provedor (`sub`), o papel, o bloqueio e um pseudônimo, que é o autor das observações no módulo obtenção. `GET /v1/conta` devolve `{ id, papel, bloqueada }`.
+- **Exclusão (`DELETE /v1/conta`, 204):** apaga a conta e as viagens salvas. As contribuições e os reportes continuam, sem conta, e cada observação da pessoa ganha um autor aleatório próprio: nada liga as observações à pessoa nem entre si (UC07, RF10). Vale também para conta bloqueada. Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior.
 - **Papel de Curador:** as contas listadas em `CURADOR_CONTAS` (identificadores do provedor, separados por vírgula) têm papel `curador`. O papel é conferido a cada pedido: tirar uma conta da lista a devolve a `motorista`. Sem papel no provedor de login, sem mexer no console do Firebase.
 - **Atestado do app** (`X-Atestado-App: <token>`): prova que o pedido vem do app do REVOLT. Sem ele, o mapa não traz lugares do Google e a ficha do Google é recusada (RN18 da obtenção).
 - **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google e planejar até `LIMITE_ROTAS_GOOGLE` viagens a cada 10 minutos, contados à parte. Não é limite por pessoa.
@@ -316,6 +317,8 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 ## Pendentes (decisão do Guilherme)
 
 - **Token do Curador:** as rotas do Curador e da operação aceitam só o token do login gerenciado de uma conta em `CURADOR_CONTAS`. Enquanto o login do app (D-04) não existe, só o dublê da coleção emite esse token. Para o Curador real usar essas rotas, falta definir como ele obtém um token do Firebase (entrar pelo app e copiar o token, ou uma tela própria). Até lá, a escolha mais simples e reversível: a API não abre outro caminho de acesso, e as rotas ficam fechadas para quem não tem esse token.
+- **Exclusão no provedor de login:** a arquitetura pede que a API apague também a conta no Firebase. Isso exige o Admin SDK com uma credencial de serviço, que não existe aqui. Escolha mais simples e reversível: a API apaga os dados dela, e o app apaga o usuário no Firebase logo depois, com o próprio SDK do cliente.
+- **Conta bloqueada que se exclui:** ao entrar de novo, a conta nova não está bloqueada. Impedir isso exigiria guardar o identificador do login depois da exclusão, o que contraria o RF10. Fica assim até decisão contrária.
 
 ## Fora desta fase
 

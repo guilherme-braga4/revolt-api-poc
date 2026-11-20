@@ -6,10 +6,10 @@
 // - Trava contra ritmo de robô: limite de fichas do Google e de viagens planejadas (rota e busca do Google) por aparelho,
 //   bem acima do uso humano. Não é limite por pessoa.
 import {
-  ArgumentsHost, CanActivate, Catch, Controller, ExceptionFilter, ExecutionContext, ForbiddenException, Get, HttpException, Injectable, Logger,
-  Req, UnauthorizedException, UseFilters, UseGuards,
+  ArgumentsHost, CanActivate, Catch, Controller, Delete, ExceptionFilter, ExecutionContext, ForbiddenException, Get, HttpCode, HttpException, Injectable,
+  Logger, Req, UnauthorizedException, UseFilters, UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { Db } from '../db.js';
 import { Conta, Erro } from './contrato.js';
@@ -135,11 +135,19 @@ export class ErrosV1 implements ExceptionFilter {
   }
 }
 
-// GET /v1/conta: confere o token de conta e devolve o identificador. Base para as rotas com conta das fases 2 e 3.
+// Exclusão da conta (UC07, RF10): cada observação da pessoa ganha um autor aleatório próprio, e a conta é apagada. As chaves
+// estrangeiras desligam a conta das contribuições, dos reportes e das decisões, e apagam as viagens salvas.
+const SQL_EXCLUIR_CONTA = `
+WITH autor AS (UPDATE observacao SET autor = gen_random_uuid() WHERE autor = $2::uuid)
+DELETE FROM conta WHERE id = $1::int`;
+
+// GET e DELETE /v1/conta: confere o token de conta, devolve o identificador e exclui a conta.
 @ApiTags('conta')
 @UseFilters(ErrosV1)
 @Controller('v1/conta')
 export class ContaController {
+  constructor(private db: Db) {}
+
   @Get()
   @UseGuards(ContaGuard)
   @ApiBearerAuth()
@@ -153,5 +161,22 @@ export class ContaController {
   @ApiUnauthorizedResponse({ type: Erro })
   conta(@Req() req) {
     return { id: req.conta.sub, papel: req.conta.papel, bloqueada: req.conta.bloqueada_em !== null };
+  }
+
+  @Delete()
+  @HttpCode(204)
+  @UseGuards(ContaGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Excluir a conta',
+    description:
+      'Apaga a conta, as viagens salvas e a ligação com as contribuições e os reportes, que continuam sem autor. Vale também para ' +
+      'conta bloqueada. Entrar de novo com o mesmo login cria uma conta nova, sem nada da anterior. A exclusão no provedor de ' +
+      'login é feita pelo app.',
+  })
+  @ApiNoContentResponse({ description: 'Conta excluída.' })
+  @ApiUnauthorizedResponse({ type: Erro })
+  async excluir(@Req() req) {
+    await this.db.query(SQL_EXCLUIR_CONTA, [req.conta.id, req.conta.pseudonimo]);
   }
 }
