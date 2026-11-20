@@ -221,6 +221,7 @@ async function tratar(req, res) {
   if (rota === 'GET /ocm/v3/poi') {
     estado.chamadas.ocm++;
     if (estado.ocm === 'fora_do_ar') return json(res, 503, { erro: 'OCM fora do ar (dublê)' });
+    if (estado.ocm === 'lento') await new Promise((ok) => setTimeout(ok, 3000)); // passa do OCM_TEMPO_LIMITE_MS do teste
     const corpo = JSON.stringify({ v2: OCM_V2, viagem: OCM_VIAGEM }[estado.ocm] ?? OCM_V1);
     if (estado.ocm === 'falha_no_meio') {
       res.writeHead(200, { 'Content-Type': 'application/json' });

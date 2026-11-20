@@ -9762,6 +9762,234 @@
           }
         }
       ]
+    },
+    {
+      "name": "13 · Fase 4 · Lacunas da obtenção, corredor da Dutra, indicadores e telemetria",
+      "item": [
+        {
+          "name": "Preparar: zerar banco de teste e dublês",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Importar o OCM do corredor (base para a seção)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Atualização ok', () => pm.expect(pm.response.json().resultado).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo lento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"lento\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OCM que passa do prazo: a atualização falha sem esperar a resposta (D1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));",
+                  "",
+                  "pm.test('Falha com o motivo do prazo', () => pm.expect(pm.response.json()).to.include({ resultado: 'falha', motivo: 'OCM não respondeu no prazo de 2 s' }));",
+                  "pm.test('Não esperou o OCM (prazo de 2 s; o dublê leva 3 s)', () => pm.expect(pm.response.responseTime).to.be.below(2900));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "A falha por prazo fica registrada para o Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const [ultima, anterior] = pm.response.json();",
+                  "pm.test('Última falhou pelo prazo, a anterior foi ok', () => {",
+                  "  pm.expect([ultima.resultado, ultima.motivo]).to.eql(['falha', 'OCM não respondeu no prazo de 2 s']);",
+                  "  pm.expect(anterior.resultado).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizacoes"
+          }
+        },
+        {
+          "name": "A cópia anterior do OCM continua inteira",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Os 9 postos do corredor continuam', () => pm.expect(pm.response.json().length).to.eql(9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/ocm_posto"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        }
+      ]
     }
   ],
   "event": [

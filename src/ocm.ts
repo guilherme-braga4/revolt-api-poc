@@ -11,6 +11,10 @@ function licencaAberta(provedor: any): string | null {
   return null;
 }
 
+// Prazo da busca no OCM, com o corpo inteiro. Passado o prazo, a atualização falha e a cópia anterior continua (RF02).
+// A busca real do Brasil leva de 1 s a 3 s; o padrão deixa folga para rede lenta.
+const OCM_TEMPO_LIMITE_MS = Number(process.env.OCM_TEMPO_LIMITE_MS) || 60_000;
+
 @Injectable()
 export class OcmService {
   constructor(private db: Db) {}
@@ -27,7 +31,7 @@ export class OcmService {
 
     try {
       const url = `${process.env.OCM_URL}/poi?countrycode=BR&opendata=true&maxresults=10000&compact=false&verbose=false`;
-      const resposta = await fetch(url, { headers: { 'X-API-Key': process.env.OCM_API_KEY } });
+      const resposta = await fetch(url, { headers: { 'X-API-Key': process.env.OCM_API_KEY }, signal: AbortSignal.timeout(OCM_TEMPO_LIMITE_MS) });
       if (!resposta.ok) throw new Error(`OCM respondeu ${resposta.status}`);
       const recebidos: any[] = await resposta.json();
 
@@ -90,7 +94,8 @@ export class OcmService {
         cliente.release();
       }
     } catch (erro) {
-      return this.terminar(registro.id, 'falha', String(erro.message ?? erro), null);
+      const motivo = erro?.name === 'TimeoutError' ? `OCM não respondeu no prazo de ${OCM_TEMPO_LIMITE_MS / 1000} s` : String(erro.message ?? erro);
+      return this.terminar(registro.id, 'falha', motivo, null);
     }
   }
 
