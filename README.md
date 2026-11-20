@@ -65,6 +65,7 @@ O app usa só os caminhos sob `/v1`, em JSON e no vocabulário do REVOLT. Nenhum
 |---|---|---|
 | `GET /v1/mapa?bbox=&zoom=` e filtros | Pinos e grupos da janela do mapa, lidos só da base. Nunca consulta fonte externa. | Atestado do app para receber lugares do Google |
 | `GET /v1/eletropostos/:id` | Ficha de um posto. Com `google-…`, a ficha vem do Google na hora, é traduzida e não é gravada. | Atestado do app para a ficha do Google |
+| `POST /v1/viagens/planejar` | Planeja uma viagem: paradas e plano B entre os postos do OCM e próprios, trechos sem cobertura e os lugares do Google ao longo da mesma rota do Google. | Atestado do app |
 | `GET /v1/conta` | Confere o token da conta e devolve o identificador. Base das rotas com conta das fases 2 e 3. | Conta |
 
 **Mapa (`GET /v1/mapa`)**
@@ -110,6 +111,22 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - `lugar_vinculado` aponta o lugar do Google que o Curador confirmou ser o mesmo posto. `link_externo` abre o lugar no Google Maps, sem consulta paga, e só existe na ficha do Google.
 - Ficha do Google sem atestado: 401. Muitas fichas seguidas no mesmo aparelho: 429. Teto atingido, Google desligado ou fora do ar: 503. Nos dois últimos casos a resposta traz `link_externo`, para o app oferecer o Google Maps.
 
+**Planejar viagem (`POST /v1/viagens/planejar`)**
+
+- Corpo: `{ "origem": { "lat", "lng" }, "destino": { "lat", "lng" }, "conectores": ["CCS2", …], "autonomia_km": 250 }`. `conectores` não aceita `OUTRO` nem `DESCONHECIDO`. A autonomia vale como veio, de 10 a 2.000 km: o app desconta a reserva que o motorista quiser.
+- A API pede uma rota ao Google e, sobre a linha dela, escolhe as paradas entre os postos do OCM e próprios entregues (fonte e provedor ligados) e compatíveis com o carro: pelo menos um conector do carro e situação operacional ou desconhecida, a até 5 km da linha (RN10). Lugares do Google nunca entram nessa conta.
+- A cada perna, se o destino está ao alcance, acabou. Senão, fica o posto mais adiante ao alcance que tem plano B; só quando nenhum tem, o mais adiante, com `aviso: "sem_plano_b"` (RN11). O alcance conta o trecho sobre a rota mais o desvio, em linha reta, para sair dela e voltar.
+- Plano B: outro posto compatível que o carro alcança com a autonomia que sobra ao chegar à parada, se ela não servir. Fica o mais perto. Posto a até 100 m da parada é o mesmo posto, e o posto de onde o carro saiu não conta.
+- Sem nenhum posto compatível ao alcance, a perna até o próximo posto compatível (ou o destino) vira um item de `trechos_sem_cobertura` (`de_km`, `ate_km`, `distancia_km`, `inicio`, `fim`). O plano segue de lá, e a parada logo depois do trecho vem sem plano B.
+- Na mesma rota, a API faz a busca do Google ao longo dela e devolve em `eletropostos_google` todos os lugares, separados das paradas, no formato do pino do mapa, com origem `google` e não verificados. Isso inclui os já vinculados a um posto próprio ou a menos de 100 m de um do OCM (Q14), e o mesmo posto pode aparecer como parada e como lugar do Google.
+- `rota.linha` (formato codificado do Google) serve só para desenhar sobre o mapa do Google. `link_externo` abre a viagem no Google Maps com origem, destino e até 9 paradas; o navegador do celular aceita só 3. O link é público, sem chave e sem custo.
+- Nada da viagem fica guardado, só o identificador de cada lugar do Google, que permite pedir a ficha depois. A busca não renova a coordenada de quem já estava na base.
+- Sem a rota não há paradas. Com o teto atingido, o Google desligado pelo Curador, fora do ar ou sem responder em `GOOGLE_TEMPO_LIMITE_MS` (padrão 10 s), sem chave ou com resposta inválida, vem 200 com `disponivel: false`, `motivo: "rota_indisponivel"`, a `causa` e `mensagem`. `link_externo` então abre só o destino. Se o Google responde que não há rota de carro, o motivo é `sem_rota`.
+- Sem a busca (só ela fora do ar ou fora do teto), as paradas saem iguais e `eletropostos_google` traz `disponivel: false` com o motivo.
+- Sem atestado: 401. Muitas viagens seguidas no mesmo aparelho: 429. Pedido inválido: 400. Base fora do ar: 503, e o Google não é consultado sem conferir o teto.
+- SKUs: a rota pede só distância, duração e linha, sem trânsito, sem paradas intermediárias e sem modificador de local, e fica no **Compute Routes Essentials** (10 mil grátis por mês, depois US$ 5 por mil). A busca pede só `places.id,places.location` e fica no **Text Search Pro** (5 mil grátis, depois US$ 32 por mil): só identificadores seria grátis, mas o mapa precisa da coordenada. Uma página de até 20 lugares por pedido. Cada consulta é conferida no teto antes de sair, primeiro a rota e depois a busca.
+- Volume real: numa cópia do banco com os 2.416 postos do OCM, a consulta dos postos ao longo de rotas sintéticas de 400 a 1.000 km leva de 30 a 80 ms, e a escolha das paradas, menos de 3 ms.
+
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 **Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.
@@ -120,7 +137,7 @@ A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a c
 
 - **Conta** (`Authorization: Bearer <token>`): token do login gerenciado. Exigida só para contribuir.
 - **Atestado do app** (`X-Atestado-App: <token>`): prova que o pedido vem do app do REVOLT. Sem ele, o mapa não traz lugares do Google e a ficha do Google é recusada (RN18 da obtenção).
-- **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google a cada 10 minutos. Não é limite por pessoa.
+- **Trava contra robô:** cada aparelho (cabeçalho `X-Aparelho`, gerado pelo app na instalação; sem ele, o IP) pode abrir até `LIMITE_FICHAS_GOOGLE` fichas do Google e planejar até `LIMITE_ROTAS_GOOGLE` viagens a cada 10 minutos, contados à parte. Não é limite por pessoa.
 
 | Variável | Produção (Firebase), a conferir na Fase 1 |
 |---|---|
@@ -131,6 +148,7 @@ A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a c
 | `ATESTADO_EMISSOR` | `https://firebaseappcheck.googleapis.com/<número do projeto>` |
 | `ATESTADO_PUBLICO` | `projects/<número do projeto>` |
 | `LIMITE_FICHAS_GOOGLE` | `60` |
+| `LIMITE_ROTAS_GOOGLE` | `20` |
 
 Com `ATESTADO_JWKS_URL` vazio, o atestado fica desligado e a API avisa no log. Serve só para desenvolvimento local. Com `CONTA_JWKS_URL` vazio, nenhuma conta é aceita.
 
@@ -206,6 +224,20 @@ A coleção do Postman cobre os critérios de aceite do PRD de obtenção (RF01 
 
 A API de teste fala com o banco por um proxy do servidor de apoio (porta 4011, em `DATABASE_URL`); o apoio fala direto (`BANCO_DIRETO_URL`). Com isso, a seção 10 da coleção simula quedas do banco: conexões derrubadas pelo Postgres, consulta lenta, conexões meio abertas que nunca respondem e mais pedidos simultâneos que o pool. Ela confere que cada pedido falha com 503 dentro do prazo e que o seguinte volta a responder sem reiniciar a API. No fim, a atualização do OCM espera uma trava de 7 s na tabela `ocm_posto` e precisa terminar: as tarefas longas não ficam presas ao prazo dos pedidos.
 
+A seção 11, no fim porque zera a base, cobre o planejador de viagem com postos do OCM e um posto próprio ao longo da Dutra:
+- parada com plano B;
+- parada sem plano B;
+- trecho sem cobertura, com um lugar do Google guardado no meio dele, que não pode virar parada;
+- destino ao alcance;
+- carro sem posto compatível;
+- os lugares do Google na mesma rota, inclusive um a 40 m de uma parada;
+- só o identificador guardado e a linha da rota não guardada;
+- gasto por tipo e ficha de um lugar vindo da rota;
+- nenhum lugar do Google, só a busca fora do ar, sem rota, linha inválida, Google fora do ar ou lento, teto atingido e Google desligado;
+- sem atestado, pedidos inválidos e ritmo de robô.
+
+Toda viagem planejada também passa pelas regras RN10 e RN11 conferidas na resposta. A seção confere ainda o corpo e a máscara de campos que chegam ao dublê, para a rota e a busca não subirem de SKU. As regras do planejador também têm testes unitários (`teste/planejador.test.mjs`, com `npm run test:unidade`), que o `npm test` roda antes da coleção.
+
 Toda resposta da `/v1` passa por um script da coleção que a compara com a especificação OpenAPI servida pela API: campo a mais, campo a menos ou tipo errado reprova. Todo pino e toda ficha também precisam trazer `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso` (RNF-01).
 
 **Pelo Newman, de uma vez:**
@@ -214,7 +246,7 @@ Toda resposta da `/v1` passa por um script da coleção que a compara com a espe
 npm test
 ```
 
-O script sobe o banco (se ainda não estiver no ar), a API de teste e o apoio, confere que `openapi/v1.json` é o que a API serve, roda a coleção e derruba tudo. Variáveis já definidas no ambiente valem mais que o `.env.teste`: dá para rodar contra outro banco `*_teste` e em outras portas, passando também `--env-var base_url=… --env-var apoio_url=…` para o Newman.
+O script roda os testes unitários, sobe o banco (se ainda não estiver no ar), a API de teste e o apoio, confere que `openapi/v1.json` é o que a API serve, roda a coleção e derruba tudo. Variáveis já definidas no ambiente valem mais que o `.env.teste`: dá para rodar contra outro banco `*_teste` e em outras portas, passando também `--env-var base_url=… --env-var apoio_url=…` para o Newman.
 
 **Pelo Postman:**
 
@@ -234,9 +266,17 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 - **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai no mapa (RN17). Com o provedor ou a fonte desse posto desligados, o lugar volta. A distância é provisória e pode juntar postos vizinhos de redes diferentes.
 - **Filtro de gratuito:** heurística sobre o texto do preço ("grátis", "gratuito", "free", "sem custo", "0" ou "R$ 0"), a revisar com dados reais. Preço não informado é oculto e contado.
 - **Acesso:** do OCM vem do tipo de uso ("Public…" é público, "Priv…" é restrito); a verificação em campo vence. O tipo da restrição ainda não é registrado.
-- **Gasto:** cada chamada ao Google é contada por tipo, com a faixa gratuita e o preço da tabela de nov/2026: busca de área a US$ 32 por mil, com 5.000 gratuitas, e ficha a US$ 25 por mil, com 1.000 gratuitas. O Google não é chamado se o gasto do mês mais o custo da próxima consulta atingir o teto. Os preços precisam ser conferidos na primeira fatura.
+- **Gasto:** cada chamada ao Google é contada por tipo, com a faixa gratuita e o preço da tabela de nov/2026: busca de área a US$ 32 por mil, com 5.000 gratuitas, e ficha a US$ 25 por mil, com 1.000 gratuitas. A rota (Compute Routes Essentials, US$ 5 por mil, 10.000 gratuitas) e a busca ao longo da rota (Text Search Pro, US$ 32 por mil, 5.000 gratuitas) foram conferidas na página oficial de preços em 19/11/2026. O Google não é chamado se o gasto do mês mais o custo da próxima consulta atingir o teto. Os preços precisam ser conferidos na primeira fatura.
 - **PlugShare:** é excluído todo registro do OCM que tenha "plugshare" em qualquer campo, sem diferenciar maiúsculas.
 - **Licença:** entram só os registros com `IsOpenDataLicensed` e licença CC0 ou CC BY 4.0. O OCM escreve a CC0 de dois jeitos, "CC0" e "CC-0", e os dois são aceitos.
+- **Planejar viagem:** `POST /v1/viagens/planejar`, sob `/v1/viagens`, onde ficam as viagens salvas da Fase 2. É `POST` porque cada pedido gasta consultas pagas e guarda identificadores.
+  - **Mudança de contrato em relação à arquitetura:** a tabela da seção 6 da arquitetura (v0.4) não pede autenticação para o planejar. Aqui ele exige o atestado do app (`X-Atestado-App`) e passa pela trava contra robô. Motivo: cada pedido gasta uma rota e uma busca pagas do Google, e sem atestado um robô esgotaria o teto do mês (D-09), como na ficha do Google. Consequência: até o app mandar o atestado, o planejar real responde 401 `atestado_invalido`.
+  - Os lugares do Google na rota vêm na mesma resposta. O antigo `POST /v1/viagens/eletropostos-google` foi retirado: com dois pedidos, o app pagaria duas rotas por viagem, e a D-07 pede uma.
+  - A rota é conferida no teto sozinha e antes da busca: sem ela não há paradas, e sem a busca a viagem segue só com OCM e próprios.
+  - O motivo da viagem sem rota é `rota_indisponivel`, com a `causa` à parte: para o app, o efeito é o mesmo (sem paradas e com o link do destino), e a causa muda só o texto.
+  - As contas de posição usam a projeção policônica do Brasil (EPSG:5880), sobre a linha simplificada a 20 m. O comprimento total é medido no elipsoide.
+  - O limite de 5 km de desvio, a regra "o mais adiante com plano B" e a falta de reserva na autonomia são escolhas de engenharia, a revisar com o Curador.
+  - A mesma chave do Google serve às fichas, à varredura, à rota e à busca, e precisa liberar também o Routes API.
 - **Verificação:** exige `origem: "campo"`, autor, data e localização. Qualquer campo fora da lista do RF07 é recusado, e isso inclui os campos do Google.
 - **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação, tipo de conector e acesso, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
 - **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do app junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
@@ -244,7 +284,8 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 
 ## Fora desta fase
 
-- Planejador de rota (Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
+- Viagens salvas com conta (`GET/POST/PUT/DELETE /v1/viagens`, Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
+- Planejador: a telemetria do UC04 (viagens planejadas, trechos sem cobertura e paradas sem plano B); o acesso restrito, que hoje não impede um posto de virar parada; e mais de 9 paradas no link do Google Maps.
 - Autenticação das rotas do Curador e da operação: depende do papel de Curador (Fase 3). Bloqueia a publicação.
 - Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
 - Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).

@@ -2,7 +2,7 @@
 // de contrato (Newman) comparam cada resposta real com ela, recusando campo a mais ou a menos.
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsDefined, IsIn, IsInt, IsNumber, IsOptional, Max, Min, ValidateNested } from 'class-validator';
 import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR } from '../vocabulario.js';
 
 const DIA = { type: String, format: 'date', example: '2026-11-12' };
@@ -85,6 +85,16 @@ export class Pino {
   @ApiProperty({ type: [String], enum: TIPOS_CONECTOR, nullable: true, description: 'Tipos de conector, para marcar a compatibilidade com o carro. null nos lugares de origem google.' })
   conectores: string[] | null;
   @ApiProperty({ type: Number, nullable: true, description: 'Maior potência nominal em kW. null quando desconhecida.' }) potencia_max_kw: number | null;
+  @ApiProperty({
+    type: String, enum: ['publico', 'restrito'], nullable: true,
+    description: 'Acesso, o mesmo do filtro publico: a verificação em campo vence o tipo de uso do OCM. null quando não informado e nos lugares de origem google.',
+  })
+  acesso: string | null;
+  @ApiProperty({
+    type: Boolean, nullable: true,
+    description: 'Posto gratuito, pela mesma regra do filtro gratuito sobre o texto do preço. null quando o preço não é informado e nos lugares de origem google.',
+  })
+  gratuito: boolean | null;
   @ApiProperty({ enum: ORIGENS, description: 'De onde vem o item. Define as condições de uso.' }) origem: string;
   @ApiProperty({ type: Verificacao }) verificacao: Verificacao;
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável: a verificação em campo, se houver; senão, o dia em que a fonte foi obtida.' })
@@ -232,6 +242,170 @@ export class Ficha {
   lugar_vinculado: string | null;
   @ApiProperty({ type: String, nullable: true, format: 'uri', description: 'Abre o lugar no Google Maps, sem consulta paga. Só na origem google.' })
   link_externo: string | null;
+}
+
+// ---------- Planejamento de viagem ----------
+
+export class Ponto {
+  @ApiProperty({ example: -23.19, minimum: -90, maximum: 90 })
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-90) @Max(90)
+  lat: number;
+
+  @ApiProperty({ example: -45.88, minimum: -180, maximum: 180 })
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(-180) @Max(180)
+  lng: number;
+}
+
+// Conector desconhecido ou "outro" não descreve um carro: não serve para escolher parada compatível.
+export const CONECTORES_DE_CARRO = TIPOS_CONECTOR.filter((t) => !['OUTRO', 'DESCONHECIDO'].includes(t));
+
+export class PedidoPlanejarViagem {
+  @ApiProperty({ type: Ponto, description: 'Origem da viagem (WGS 84).' })
+  @IsDefined() @ValidateNested() @Type(() => Ponto)
+  origem: Ponto;
+
+  @ApiProperty({ type: Ponto, description: 'Destino da viagem (WGS 84).', example: { lat: -22.52, lng: -44.1 } })
+  @IsDefined() @ValidateNested() @Type(() => Ponto)
+  destino: Ponto;
+
+  @ApiProperty({
+    type: [String],
+    enum: CONECTORES_DE_CARRO,
+    description: 'Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.',
+    example: ['CCS2', 'TIPO_2'],
+  })
+  @IsArray() @ArrayMinSize(1) @ArrayUnique()
+  @IsIn(CONECTORES_DE_CARRO, { each: true, message: `conectores aceita: ${CONECTORES_DE_CARRO.join(', ')}` })
+  conectores: string[];
+
+  @ApiProperty({
+    description: 'Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.',
+    minimum: 10,
+    maximum: 2000,
+    example: 250,
+  })
+  @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(10) @Max(2000)
+  autonomia_km: number;
+}
+
+export class RotaGoogle {
+  @ApiProperty({
+    description: 'Linha da rota no formato codificado do Google (Encoded Polyline), só para desenhar sobre o mapa do Google. Não é guardada.',
+    example: '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+  })
+  linha: string;
+  @ApiProperty({ type: 'integer', description: 'Distância da rota do Google, em metros.', example: 287000 }) distancia_m: number;
+  @ApiProperty({ type: 'integer', description: 'Duração da rota do Google sem trânsito, em segundos.', example: 12600 }) duracao_s: number;
+  @ApiProperty({ enum: ['google'] }) origem: string;
+  @ApiProperty({ type: CondicoesDeUso }) condicoes_de_uso: CondicoesDeUso;
+}
+
+export class PostoNaRota {
+  @ApiProperty({ description: 'Distância aproximada desde a origem, em km, medida sobre a linha da rota até o ponto mais perto do posto.', example: 96.4 })
+  km_na_rota: number;
+  @ApiProperty({ description: 'Distância em linha reta do posto até a linha da rota, em km.', example: 0.8 }) desvio_km: number;
+  @ApiProperty({ type: Pino, description: 'O posto, como no mapa. Sempre de origem open_charge_map ou verificacao_propria (RN10).' })
+  eletroposto: Pino;
+}
+
+export class Parada extends PostoNaRota {
+  @ApiProperty({ type: 'integer', description: 'Posição da parada na viagem, a partir de 1.', example: 1 }) ordem: number;
+  @ApiProperty({
+    type: PostoNaRota,
+    nullable: true,
+    description:
+      'Plano B (RN11): outro posto compatível que o carro alcança com a autonomia que sobra ao chegar à parada, se ela não servir. ' +
+      'É o mais perto da parada. null quando não há nenhum; aí aviso vem sem_plano_b.',
+  })
+  plano_b: PostoNaRota | null;
+  @ApiProperty({ enum: ['sem_plano_b'], type: String, nullable: true, description: 'sem_plano_b: o app avisa nesta parada que não há alternativa ao alcance.' })
+  aviso: string | null;
+}
+
+export class TrechoSemCobertura {
+  @ApiProperty({ description: 'Onde o trecho começa, em km desde a origem: a origem ou a parada anterior, o último ponto de recarga.', example: 96.4 })
+  de_km: number;
+  @ApiProperty({ description: 'Onde o trecho acaba, em km desde a origem: o próximo posto compatível, ou o destino se não houver.', example: 175.2 })
+  ate_km: number;
+  @ApiProperty({ description: 'Quanto o trecho consome, em km, com os desvios até os postos. É maior que a autonomia.', example: 80.1 })
+  distancia_km: number;
+  @ApiProperty({ type: Localizacao, description: 'Coordenada do começo: a origem pedida ou o posto da parada anterior.' }) inicio: Localizacao;
+  @ApiProperty({ type: Localizacao, description: 'Coordenada do fim: o próximo posto compatível ou o destino pedido.' }) fim: Localizacao;
+}
+
+export const MOTIVOS_LUGARES_GOOGLE = ['teto_atingido', 'desligada', 'fora_do_ar', 'sem_chave', 'erro_da_fonte', 'sem_rota'];
+
+export class LugaresGoogleNaViagem {
+  @ApiProperty({ description: 'true: a busca do Google ao longo da rota foi feita (a lista pode estar vazia). false: veja motivo.' })
+  disponivel: boolean;
+  @ApiProperty({
+    enum: MOTIVOS_LUGARES_GOOGLE,
+    type: String,
+    nullable: true,
+    description:
+      'Por que não há lugares do Google: teto do mês atingido, camada desligada pelo Curador, Google fora do ar ou lento, consulta ' +
+      'não configurada, consulta recusada pelo Google, ou sem rota entre os pontos. null quando disponível.',
+  })
+  motivo: string | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Texto para o app mostrar quando não disponível.' }) mensagem: string | null;
+  @ApiProperty({
+    type: [Pino],
+    description:
+      'Todos os lugares que a busca do Google devolveu ao longo da rota, na ordem do Google, inclusive os já vinculados a um posto ' +
+      'próprio ou perto de um do OCM (Q14): o mesmo posto pode aparecer como parada e como lugar do Google. Origem google, não ' +
+      'verificados, sem nome nem conectores (vêm na ficha), sem plano B e fora das paradas (RN10).',
+  })
+  eletropostos: Pino[];
+}
+
+export const MOTIVOS_VIAGEM = ['rota_indisponivel', 'sem_rota'];
+export const CAUSAS_ROTA_INDISPONIVEL = ['teto_atingido', 'desligada', 'fora_do_ar', 'sem_chave', 'erro_da_fonte'];
+
+export class RespostaPlanejarViagem {
+  @ApiProperty({ description: 'true: a rota do Google veio e as paradas foram calculadas (as listas podem estar vazias). false: veja motivo.' })
+  disponivel: boolean;
+  @ApiProperty({
+    enum: MOTIVOS_VIAGEM,
+    type: String,
+    nullable: true,
+    description:
+      'Por que não há paradas. rota_indisponivel: não foi possível obter a rota do Google agora (veja causa); sem rota não há ' +
+      'paradas, e o app oferece link_externo, que abre só o destino no Google Maps. sem_rota: o Google não achou rota de carro ' +
+      'entre a origem e o destino. null quando disponível.',
+  })
+  motivo: string | null;
+  @ApiProperty({
+    enum: CAUSAS_ROTA_INDISPONIVEL,
+    type: String,
+    nullable: true,
+    description: 'Só com rota_indisponivel: teto do mês atingido, Google desligado pelo Curador, Google fora do ar ou lento, consulta não configurada ou recusada pelo Google.',
+  })
+  causa: string | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Texto para o app mostrar quando não disponível.' }) mensagem: string | null;
+  @ApiProperty({ type: RotaGoogle, nullable: true, description: 'Rota do Google, só para desenhar sobre o mapa do Google. null quando não disponível.' })
+  rota: RotaGoogle | null;
+  @ApiProperty({
+    type: [Parada],
+    description:
+      'Paradas sugeridas, na ordem da viagem, só com postos do OCM e próprios compatíveis com o carro (RN10), cada uma com plano B ' +
+      'ou aviso (RN11). Vazia quando o destino está ao alcance da autonomia ou quando não disponível.',
+  })
+  paradas: Parada[];
+  @ApiProperty({
+    type: [TrechoSemCobertura],
+    description: 'Trechos em que nenhum posto compatível está ao alcance da autonomia (UC04). A parada logo depois de um deles vem sem plano B.',
+  })
+  trechos_sem_cobertura: TrechoSemCobertura[];
+  @ApiProperty({ type: LugaresGoogleNaViagem, description: 'Lugares do Google ao longo da mesma rota, separados das paradas (D-07).' })
+  eletropostos_google: LugaresGoogleNaViagem;
+  @ApiProperty({
+    type: String,
+    format: 'uri',
+    description:
+      'Abre a viagem no Google Maps por link público, sem consulta paga (RF07): origem, destino e as paradas (até 9; o navegador do ' +
+      'celular aceita só 3). Sem rota, abre só o destino, partindo de onde o aparelho está.',
+  })
+  link_externo: string;
 }
 
 // ---------- Conta e erros ----------

@@ -13,6 +13,7 @@ import { PropriosController } from './proprios.js';
 import { Acesso, ContaController, ContaGuard } from './v1/acesso.js';
 import { FichaController } from './v1/ficha.js';
 import { MapaController } from './v1/mapa.js';
+import { ViagensController } from './v1/viagens.js';
 
 // Módulo obtenção: a POC evoluída (OCM, varredura e ficha do Google, verificação própria, teto e fontes). Rotas do Curador.
 @Module({
@@ -25,7 +26,7 @@ class ObtencaoModule {}
 // Módulo app: o contrato /v1 consumido pelo app do motorista (D-02).
 @Module({
   imports: [ObtencaoModule],
-  controllers: [MapaController, FichaController, ContaController],
+  controllers: [MapaController, FichaController, ViagensController, ContaController],
   providers: [Acesso, ContaGuard],
 })
 class AppV1Module {}

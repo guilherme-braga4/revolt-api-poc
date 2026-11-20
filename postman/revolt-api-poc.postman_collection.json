@@ -102,9 +102,9 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const doc = pm.response.json();",
-                  "pm.test('OpenAPI 3 com as rotas da Fase 0', () => {",
+                  "pm.test('OpenAPI 3 com as rotas da Fase 0 e o planejador de viagem', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/mapa', '/v1/eletropostos/{id}', '/v1/conta']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/mapa', '/v1/eletropostos/{id}', '/v1/viagens/planejar', '/v1/conta']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -1041,7 +1041,7 @@
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const g = pm.response.json();",
                   "pm.test('Teto vigente de US$ 50', () => pm.expect(g.teto_usd).to.eql(50));",
-                  "pm.test('Gasto separado por tipo de consulta', () => pm.expect(g.por_tipo.map((t) => t.tipo)).to.have.members(['busca_area', 'ficha']));",
+                  "pm.test('Gasto separado por tipo de consulta', () => pm.expect(g.por_tipo.map((t) => t.tipo)).to.have.members(['busca_area', 'ficha', 'rota', 'busca_rota']));",
                   "pm.test('Teto não atingido', () => pm.expect(g.teto_atingido).to.eql(false));",
                   "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
                   "  pm.test('Buscas de área contadas batem com as chamadas feitas ao Google', () => pm.expect(g.por_tipo.find((t) => t.tipo === 'busca_area').consultas).to.eql(r.json().chamadas.google_busca));",
@@ -3306,6 +3306,16 @@
                   "  pm.expect(d.potencia_max_kw).to.eql(null);",
                   "});",
                   "pm.test('Lugar do Google sem filtro, no zoom alto', () => pm.expect(ids).to.include('google-lorena'));",
+                  "pm.test('Pino traz acesso e gratuito, pelas mesmas regras dos filtros', () => {",
+                  "  const acesso = (v) => pino(pm.collectionVariables.get(v)).acesso;",
+                  "  const gratuito = (v) => pino(pm.collectionVariables.get(v)).gratuito;",
+                  "  pm.expect([acesso('p_tipo2_gratis'), acesso('p_ccs2_restrito'), acesso('p_chademo'), acesso('p_desconhecido')]).to.eql(['publico', 'restrito', 'publico', null]);",
+                  "  pm.expect([gratuito('p_tipo2_gratis'), gratuito('p_ccs2_restrito'), gratuito('p_chademo'), gratuito('p_desconhecido')]).to.eql([true, false, null, null]);",
+                  "});",
+                  "pm.test('Lugar do Google sem acesso nem gratuito (nenhum dado do Google no pino)', () => {",
+                  "  const g = pino('google-lorena');",
+                  "  pm.expect([g.acesso, g.gratuito]).to.eql([null, null]);",
+                  "});",
                   "pm.test('Nada oculto', () => pm.expect(r.ocultos).to.eql({ total: 0, por_motivo: { conector: 0, potencia: 0, rapida: 0, publico: 0, gratuito: 0 }, sem_contagem: { ha_ocultos: false, motivo: null } }));"
                 ]
               }
@@ -4661,6 +4671,2027 @@
           }
         }
       ]
+    },
+    {
+      "name": "11 · /v1 · Planejar viagem (UC04, RN10, RN11) e lugares do Google na rota (UC10)",
+      "item": [
+        {
+          "name": "Preparar: base de teste zerada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Preparar: dublê do OCM com os postos da viagem pela Dutra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: cópia do OCM com os postos da viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Os 9 postos da viagem entraram', () => pm.expect(pm.response.json().contagens.aceitos).to.eql(9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: posto próprio CCS2 em Taubaté, a uns 2 km do ocm-9102",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('p_viagem_taubate', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.04,\n    \"lng\": -45.575\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"publico\",\n  \"preco\": \"R$ 2,50/kWh\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Parada com plano B: carro CCS2 com 100 km faz duas paradas, cada uma com plano B ao alcance",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "pm.test('Paradas de sempre: Guaratinguetá e Resende, cada uma com plano B', () => pm.expect(paradas).to.eql([['ocm-9104', 'ocm-9105'], ['ocm-9108', 'ocm-9109']]));",
+                  "pm.test('Nenhum trecho sem cobertura', () => pm.expect(r.trechos_sem_cobertura).to.eql([]));",
+                  "pm.test('Posição de cada parada na rota: Guaratinguetá perto do km 83 e Resende perto do km 172, a menos de 1 km da linha', () => {",
+                  "  pm.expect(r.paradas[0].km_na_rota).to.be.within(80, 87);",
+                  "  pm.expect(r.paradas[1].km_na_rota).to.be.within(168, 176);",
+                  "  for (const p of r.paradas) pm.expect(p.desvio_km).to.be.below(1);",
+                  "});",
+                  "pm.test('Rota do Google, com origem e condições de uso do Google', () => {",
+                  "  pm.expect(r.rota.linha).to.be.a('string').and.not.empty;",
+                  "  pm.expect([r.rota.distancia_m, r.rota.duracao_s]).to.eql([211000, 9300]);",
+                  "  pm.expect(r.rota.origem).to.eql('google');",
+                  "  pm.expect(r.rota.condicoes_de_uso.exibicao).to.eql('somente_sobre_mapa_google');",
+                  "  pm.expect(r.rota.condicoes_de_uso.pode_ler_em_voz).to.eql(false);",
+                  "});",
+                  "pm.test('Lugares do Google separados das paradas: todos os que a busca devolveu, na ordem do Google', () => {",
+                  "  pm.expect(r.eletropostos_google.disponivel).to.eql(true);",
+                  "  pm.expect(r.eletropostos_google.eletropostos.map((e) => e.id)).to.eql([\"google-dubleA\", \"google-dubleB\", \"google-dubleViagem\", \"google-dubleResende\", \"google-dubleRota\"]);",
+                  "});",
+                  "pm.test('Cada lugar do Google: origem google, não verificado, condições do Google, sem nome nem conectores', () => {",
+                  "  for (const e of r.eletropostos_google.eletropostos) {",
+                  "    pm.expect(e.origem, e.id).to.eql('google');",
+                  "    pm.expect(e.verificacao.situacao, e.id).to.eql('nao_verificado');",
+                  "    pm.expect(e.condicoes_de_uso.exibicao, e.id).to.eql('somente_sobre_mapa_google');",
+                  "    pm.expect([e.nome, e.conectores], e.id).to.eql([null, null]);",
+                  "  }",
+                  "});",
+                  "pm.test('O mesmo posto vem como parada (ocm-9108) e como lugar do Google a 40 m dele (Q14)', () =>",
+                  "  pm.expect(r.eletropostos_google.eletropostos.find((e) => e.id === 'google-dubleResende').localizacao).to.eql({ lat: -22.4713, lng: -44.4493 }));",
+                  "pm.test('O nome que o Google mandou a mais não chega ao app', () => pm.expect(pm.response.text()).to.not.include('Dublê de Resende'));",
+                  "",
+                  "// Um trecho da linha, sem barra invertida (que o ILIKE do apoio leria como escape), para procurar no banco depois.",
+                  "const inicio = [...Array(r.rota.linha.length - 16).keys()].find((i) => !r.rota.linha.slice(i, i + 16).includes('\\\\'));",
+                  "pm.collectionVariables.set('linha_trecho', r.rota.linha.slice(inicio, inicio + 16));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, resp) => {",
+                  "  const { chamadas, mascaras, corpos } = resp.json();",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  pm.test('Uma consulta de rota e uma busca ao longo dela', () => {",
+                  "    pm.expect(chamadas.google_rota - antes.google_rota).to.eql(1);",
+                  "    pm.expect(chamadas.google_busca_rota - antes.google_busca_rota).to.eql(1);",
+                  "  });",
+                  "  pm.test('Uma rota só por viagem: a busca usou a mesma linha das paradas e do mapa (D-07)', () =>",
+                  "    pm.expect(corpos.busca_rota.searchAlongRouteParameters).to.eql({ polyline: { encodedPolyline: r.rota.linha } }));",
+                  "  pm.test('Rota no SKU Compute Routes Essentials: sem trânsito, sem paradas, sem otimizar e sem modificador de local', () => {",
+                  "    pm.expect(corpos.rota.routingPreference).to.eql('TRAFFIC_UNAWARE');",
+                  "    pm.expect(corpos.rota.travelMode).to.eql('DRIVE');",
+                  "    pm.expect(corpos.rota).to.not.have.any.keys('intermediates', 'optimizeWaypointOrder', 'extraComputations', 'requestedReferenceRoutes');",
+                  "    pm.expect(corpos.rota.origin).to.eql({ location: { latLng: { latitude: -23.19, longitude: -45.88 } } });",
+                  "    pm.expect(mascaras.rota).to.eql('routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline');",
+                  "  });",
+                  "  pm.test('Busca no SKU Text Search Pro: só identificador e coordenada, até 20 lugares', () => {",
+                  "    pm.expect(mascaras.busca_rota).to.eql('places.id,places.location');",
+                  "    pm.expect(corpos.busca_rota.includedType).to.eql('electric_vehicle_charging_station');",
+                  "    pm.expect(corpos.busca_rota.pageSize).to.eql(20);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Parada sem plano B: carro CHAdeMO com 150 km para no único posto CHAdeMO, com o aviso sem_plano_b",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "",
+                  "pm.test('Uma parada, em Guaratinguetá, sem plano B e com o aviso', () => {",
+                  "  pm.expect(paradas).to.eql([['ocm-9104', null]]);",
+                  "  pm.expect(r.paradas[0].aviso).to.eql('sem_plano_b');",
+                  "});",
+                  "pm.test('Nenhum trecho sem cobertura', () => pm.expect(r.trechos_sem_cobertura).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CHADEMO\"\n  ],\n  \"autonomia_km\": 150\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: lugar do Google guardado no meio do trecho sem posto CCS2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"guardadoNoTrecho\",\n  \"lat\": -22.555,\n  \"lng\": -44.85,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Trecho sem cobertura: carro CCS2 com 60 km, o trecho de Lorena a Resende vem marcado e nenhum lugar do Google o cobre (RN10)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "",
+                  "pm.test('Paradas: Taubaté (plano B no posto próprio), Guaratinguetá, Lorena (sem plano B) e Resende, depois do trecho', () =>",
+                  "  pm.expect(paradas).to.eql([['ocm-9102', pm.collectionVariables.get('p_viagem_taubate')], ['ocm-9104', 'ocm-9105'], ['ocm-9105', null], ['ocm-9109', null]]));",
+                  "pm.test('Posto próprio entra como plano B, verificado', () => {",
+                  "  const b = r.paradas[0].plano_b.eletroposto;",
+                  "  pm.expect([b.origem, b.verificacao.situacao]).to.eql(['verificacao_propria', 'verificado']);",
+                  "});",
+                  "pm.test('Um trecho sem cobertura, de Lorena (km ~95) a Resende (km ~170), maior que a autonomia', () => {",
+                  "  pm.expect(r.trechos_sem_cobertura).to.have.lengthOf(1);",
+                  "  const t = r.trechos_sem_cobertura[0];",
+                  "  pm.expect(t.de_km).to.eql(r.paradas[2].km_na_rota);",
+                  "  pm.expect(t.ate_km).to.eql(r.paradas[3].km_na_rota);",
+                  "  pm.expect(t.de_km).to.be.within(92, 98);",
+                  "  pm.expect(t.ate_km).to.be.within(166, 174);",
+                  "  pm.expect(t.distancia_km).to.be.above(60);",
+                  "  pm.expect([t.inicio, t.fim]).to.eql([r.paradas[2].eletroposto.localizacao, r.paradas[3].eletroposto.localizacao]);",
+                  "});",
+                  "pm.test('Os lugares do Google no trecho (o guardado e o da busca) não viram parada', () => {",
+                  "  const ids = paradas.flat();",
+                  "  pm.expect(ids.filter((id) => id && id.startsWith('google-'))).to.eql([]);",
+                  "  pm.expect(r.eletropostos_google.eletropostos.map((e) => e.id)).to.include('google-dubleViagem');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 60\n}"
+            }
+          }
+        },
+        {
+          "name": "Destino ao alcance: carro CCS2 com 250 km não precisa de parada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "",
+                  "pm.test('Nenhuma parada e nenhum trecho', () => pm.expect([r.paradas, r.trechos_sem_cobertura]).to.eql([[], []]));",
+                  "pm.test('Os lugares do Google vêm assim mesmo', () => pm.expect(r.eletropostos_google.eletropostos).to.have.lengthOf(5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 250\n}"
+            }
+          }
+        },
+        {
+          "name": "Nenhum posto compatível: carro GB/T, a viagem inteira é um trecho sem cobertura",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "",
+                  "pm.test('Nenhuma parada', () => pm.expect(r.paradas).to.eql([]));",
+                  "pm.test('Um trecho da origem ao destino', () => {",
+                  "  pm.expect(r.trechos_sem_cobertura).to.have.lengthOf(1);",
+                  "  const t = r.trechos_sem_cobertura[0];",
+                  "  pm.expect([t.de_km, t.inicio, t.fim]).to.eql([0, pedido.origem, pedido.destino]);",
+                  "  pm.expect(t.ate_km).to.be.within(200, 215);",
+                  "  pm.expect(t.distancia_km).to.eql(t.ate_km);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"GBT\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Depois da viagem, do lugar novo do Google ficou só o identificador (RN22)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const l = pm.response.json().lugar;",
+                  "pm.test('Identificador guardado, para a ficha poder ser pedida', () => pm.expect(l.place_id).to.eql('dubleViagem'));",
+                  "pm.test('Sem coordenada e sem data', () => pm.expect([l.lat, l.lng, l.coordenada_obtida_em]).to.eql([null, null, null]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/google-lugar?id=dubleViagem"
+          }
+        },
+        {
+          "name": "A linha da rota e os nomes da busca não ficaram guardados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('O nome do lugar não está em nenhuma tabela', () => pm.expect(pm.response.json().total).to.eql(0));",
+                  "const trecho = pm.collectionVariables.get('linha_trecho');",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/procurar?texto=' + encodeURIComponent(trecho), (e, r) =>",
+                  "  pm.test(`A linha da rota não está em nenhuma tabela (procurado: ${trecho})`, () => pm.expect(r.json().total).to.eql(0)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=Dublê%20de%20Resende"
+          }
+        },
+        {
+          "name": "Gasto do mês: a rota e a busca ao longo da rota, por tipo e com o SKU",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const por_tipo = pm.response.json().por_tipo;",
+                  "const rota = por_tipo.find((t) => t.tipo === 'rota');",
+                  "const busca = por_tipo.find((t) => t.tipo === 'busca_rota');",
+                  "pm.test('Rota: Compute Routes Essentials, 10 mil grátis, US$ 5 por mil, já com consulta no mês', () => {",
+                  "  pm.expect([rota.sku, rota.gratis_mes, rota.usd_por_mil]).to.eql(['Compute Routes Essentials', 10000, 5]);",
+                  "  pm.expect(rota.consultas).to.be.at.least(1);",
+                  "});",
+                  "pm.test('Busca ao longo da rota: Text Search Pro, 5 mil grátis, US$ 32 por mil, já com consulta no mês', () => {",
+                  "  pm.expect(busca.sku).to.match(/^Text Search Pro/);",
+                  "  pm.expect([busca.gratis_mes, busca.usd_por_mil]).to.eql([5000, 32]);",
+                  "  pm.expect(busca.consultas).to.be.at.least(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/gasto"
+          }
+        },
+        {
+          "name": "Ficha de um lugar que só veio da busca na rota",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Ficha buscada no Google na hora', () => pm.expect(pm.response.json().atributos.nome.valor).to.eql('Eletroposto Dublê da Rota'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/eletropostos/google-dubleRota"
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo sem_lugares_na_rota",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"sem_lugares_na_rota\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Nenhum lugar do Google na rota: as paradas saem iguais, com a lista do Google vazia",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "pm.test('Paradas de sempre: Guaratinguetá e Resende, cada uma com plano B', () => pm.expect(paradas).to.eql([['ocm-9104', 'ocm-9105'], ['ocm-9108', 'ocm-9109']]));",
+                  "pm.test('Lugares do Google disponíveis, lista vazia', () => pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.eletropostos]).to.eql([true, []]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo busca_fora_do_ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"busca_fora_do_ar\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Só a busca do Google fora do ar: as paradas saem iguais, sem lugares do Google e com aviso",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "pm.test('Paradas de sempre: Guaratinguetá e Resende, cada uma com plano B', () => pm.expect(paradas).to.eql([['ocm-9104', 'ocm-9105'], ['ocm-9108', 'ocm-9109']]));",
+                  "pm.test('Lugares do Google indisponíveis, com o motivo fora_do_ar e mensagem', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'fora_do_ar', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('A rota vem, para o mapa', () => pm.expect(r.rota.linha).to.be.a('string').and.not.empty);",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 1 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(1);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo sem_rota",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"sem_rota\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Sem rota de carro entre os pontos: avisa e não faz a busca",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo sem_rota, causa None, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'sem_rota', null]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'sem_rota', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo linha_invalida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"linha_invalida\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Rota do Google com linha malformada: rota indisponível, sem erro na viagem",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo rota_indisponivel, causa erro_da_fonte, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'rota_indisponivel', \"erro_da_fonte\"]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'erro_da_fonte', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo fora_do_ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"fora_do_ar\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Google fora do ar: sem rota não há paradas, e o link abre o destino no Google Maps",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo rota_indisponivel, causa fora_do_ar, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'rota_indisponivel', \"fora_do_ar\"]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'fora_do_ar', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo lento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"lento\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Google lento: a resposta não espera o Google passar do prazo",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo rota_indisponivel, causa fora_do_ar, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'rota_indisponivel', \"fora_do_ar\"]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'fora_do_ar', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});",
+                  "",
+                  "// O dublê só responde depois de 3 s; o prazo do teste é GOOGLE_TEMPO_LIMITE_MS=2000 (.env.teste).",
+                  "pm.test('Respondeu sem esperar o Google', () => pm.expect(pm.response.responseTime).to.be.below(5000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dublê do Google no modo ok",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"ok\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Curador baixa o teto para zero",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 0,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Teto atingido: nenhuma consulta ao Google, sem paradas, e o link abre o destino (RN15)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo rota_indisponivel, causa teto_atingido, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'rota_indisponivel', \"teto_atingido\"]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'teto_atingido', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Curador volta o teto para US$ 50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 50,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Desligar a camada do Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Google desligado pelo Curador: nenhuma consulta ao Google e sem paradas",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test('Indisponível: motivo rota_indisponivel, causa desligada, com mensagem', () => {",
+                  "  pm.expect([r.disponivel, r.motivo, r.causa]).to.eql([false, 'rota_indisponivel', \"desligada\"]);",
+                  "  pm.expect(r.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Sem rota não há paradas, trechos nem rota', () => pm.expect([r.rota, r.paradas, r.trechos_sem_cobertura]).to.eql([null, [], []]));",
+                  "pm.test('Lugares do Google indisponíveis pelo mesmo motivo', () => {",
+                  "  pm.expect([r.eletropostos_google.disponivel, r.eletropostos_google.motivo, r.eletropostos_google.eletropostos]).to.eql([false, 'desligada', []]);",
+                  "  pm.expect(r.eletropostos_google.mensagem).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('link_externo abre só o destino no Google Maps', () =>",
+                  "  pm.expect(r.link_externo).to.eql('https://www.google.com/maps/dir/?api=1&destination=-22.52%2C-44.1&travelmode=driving'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Religar o Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Sem atestado do app: recusado, sem consulta ao Google [sem atestado]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Erro atestado_invalido', () => pm.expect(pm.response.json().erro).to.eql('atestado_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Pedido sem conectores é recusado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro pedido_invalido', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Conector desconhecido não descreve um carro e é recusado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro pedido_invalido', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"DESCONHECIDO\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Autonomia abaixo de 10 km é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro pedido_invalido', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "Pedido sem destino é recusado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro pedido_invalido', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Latitude fora dos limites é recusada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('Erro pedido_invalido', () => pm.expect(pm.response.json().erro).to.eql('pedido_invalido'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": 95,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Trava contra ritmo de robô: a 6ª viagem seguida do mesmo aparelho é barrada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 5 viagens seguidas do mesmo aparelho, o limite do ambiente de teste (LIMITE_ROTAS_GOOGLE).",
+                  "const viagem = {",
+                  "  url: pm.variables.get('base_url') + '/v1/viagens/planejar',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json', 'X-Aparelho': 'aparelho-robo-viagem', 'X-Atestado-App': pm.collectionVariables.get('atestado') },",
+                  "  body: { mode: 'raw', raw: pm.request.body.raw },",
+                  "};",
+                  "let feitos = 0;",
+                  "const proximo = () => {",
+                  "  if (feitos++ < 5) return pm.sendRequest(viagem, (e, r) => { if (r.code !== 200) console.error('viagem falhou', r.code); proximo(); });",
+                  "  // Só depois das 5: guarda as chamadas aos dublês para provar que a 6ª não chega ao Google.",
+                  "  pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));",
+                  "};",
+                  "proximo();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 429', () => pm.response.to.have.status(429));",
+                  "pm.test('Erro ritmo_de_robo', () => pm.expect(pm.response.json().erro).to.eql('ritmo_de_robo'));",
+                  "",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 0 de rota e 0 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(0);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(0);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "aparelho-robo-viagem"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Outro aparelho continua planejando",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => pm.collectionVariables.set('chamadas_antes', JSON.stringify(r.json().chamadas)));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "const pedido = JSON.parse(pm.request.body.raw);",
+                  "const paradas = r.paradas.map((p) => [p.eletroposto.id, p.plano_b ? p.plano_b.eletroposto.id : null]);",
+                  "const consulta = (link) => Object.fromEntries(link.split('?')[1].split('&').map((kv) => kv.split('=').map(decodeURIComponent)));",
+                  "pm.test('Disponível, sem motivo', () => pm.expect([r.disponivel, r.motivo, r.causa, r.mensagem]).to.eql([true, null, null, null]));",
+                  "pm.test('RN10: paradas e planos B só do OCM e próprios, compatíveis com o carro', () => {",
+                  "  for (const p of r.paradas)",
+                  "    for (const e of [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]) {",
+                  "      pm.expect(['open_charge_map', 'verificacao_propria'], e.id).to.include(e.origem);",
+                  "      pm.expect(e.conectores.some((t) => pedido.conectores.includes(t)), e.id).to.eql(true);",
+                  "    }",
+                  "});",
+                  "pm.test('RN11: toda parada tem plano B ao alcance da autonomia que sobra ao chegar nela, ou o aviso sem_plano_b', () => {",
+                  "  let antes = { km_na_rota: 0, desvio_km: 0 };",
+                  "  for (const p of r.paradas) {",
+                  "    if (p.plano_b) {",
+                  "      const sobra = pedido.autonomia_km - (p.km_na_rota - antes.km_na_rota + antes.desvio_km + p.desvio_km);",
+                  "      const ida = Math.abs(p.plano_b.km_na_rota - p.km_na_rota) + p.desvio_km + p.plano_b.desvio_km;",
+                  "      pm.expect(ida, p.eletroposto.id).to.be.at.most(sobra + 0.3); // os km vêm com uma casa",
+                  "      pm.expect(p.plano_b.eletroposto.id).to.not.eql(p.eletroposto.id);",
+                  "      pm.expect(p.aviso, p.eletroposto.id).to.eql(null);",
+                  "    } else pm.expect(p.aviso, p.eletroposto.id).to.eql('sem_plano_b');",
+                  "    antes = p;",
+                  "  }",
+                  "});",
+                  "pm.test('Paradas na ordem da viagem', () =>",
+                  "  r.paradas.forEach((p, i) => {",
+                  "    pm.expect(p.ordem).to.eql(i + 1);",
+                  "    if (i) pm.expect(p.km_na_rota).to.be.above(r.paradas[i - 1].km_na_rota);",
+                  "  }));",
+                  "pm.test('Link do Google Maps com origem, destino e as paradas', () => {",
+                  "  const q = consulta(r.link_externo);",
+                  "  pm.expect(r.link_externo).to.match(/^https:\\/\\/www\\.google\\.com\\/maps\\/dir\\/\\?api=1&/);",
+                  "  pm.expect([q.origin, q.destination, q.travelmode]).to.eql([`${pedido.origem.lat},${pedido.origem.lng}`, `${pedido.destino.lat},${pedido.destino.lng}`, 'driving']);",
+                  "  pm.expect(q.waypoints).to.eql(r.paradas.length ? r.paradas.map((p) => `${p.eletroposto.localizacao.lat},${p.eletroposto.localizacao.lng}`).join('|') : undefined);",
+                  "});",
+                  "pm.test('Paradas de sempre: Guaratinguetá e Resende, cada uma com plano B', () => pm.expect(paradas).to.eql([['ocm-9104', 'ocm-9105'], ['ocm-9108', 'ocm-9109']]));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) => {",
+                  "  const antes = JSON.parse(pm.collectionVariables.get('chamadas_antes'));",
+                  "  const depois = r.json().chamadas;",
+                  "  pm.test('Consultas ao Google: 1 de rota e 1 de busca ao longo da rota', () => {",
+                  "    pm.expect(depois.google_rota - antes.google_rota, 'rota').to.eql(1);",
+                  "    pm.expect(depois.google_busca_rota - antes.google_busca_rota, 'busca').to.eql(1);",
+                  "  });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        }
+      ]
     }
   ],
   "event": [
@@ -4734,6 +6765,12 @@
           "    if (rota === '/v1/mapa' && pm.response.code === 200)",
           "      pm.test('RNF-01: todo pino traz origem, verificação, data e condições de uso', () => {",
           "        for (const p of corpo.pinos) for (const k of quatro) pm.expect(p[k], `${p.id}.${k}`).to.not.equal(undefined);",
+          "      });",
+          "    if (rota === '/v1/viagens/planejar' && pm.response.code === 200)",
+          "      pm.test('RNF-01: toda parada, plano B e lugar do Google traz origem, verificação, data e condições de uso, e a rota traz origem e condições', () => {",
+          "        const postos = corpo.paradas.flatMap((p) => [p.eletroposto, ...(p.plano_b ? [p.plano_b.eletroposto] : [])]).concat(corpo.eletropostos_google.eletropostos);",
+          "        for (const p of postos) for (const k of quatro) pm.expect(p[k], `${p.id}.${k}`).to.not.equal(undefined);",
+          "        if (corpo.rota) for (const k of ['origem', 'condicoes_de_uso']) pm.expect(corpo.rota[k], `rota.${k}`).to.not.equal(undefined);",
           "      });",
           "    if (rota === '/v1/eletropostos/{id}' && pm.response.code === 200)",
           "      pm.test('RNF-01: a ficha traz origem, verificação, data e condições de uso, e cada atributo informado tem origem e data', () => {",

@@ -8,6 +8,8 @@ cd "$(dirname "$0")/.."
 # Banco já no ar (ex.: subido por outra cópia do repositório)? Usa ele.
 docker inspect -f '{{.State.Running}}' revolt-poc-db 2>/dev/null | grep -q true || docker compose up -d --wait
 npx tsc
+# Testes unitários (regras do planejador de viagem): rápidos e sem banco, rodam antes de subir qualquer coisa.
+node --test teste/*.test.mjs
 # O apoio sobe antes: a API de teste fala com o banco pelo proxy dele.
 node --env-file=.env.teste teste/apoio.mjs > /dev/null & APOIO=$!
 trap 'kill $APOIO ${API:-} 2>/dev/null' EXIT

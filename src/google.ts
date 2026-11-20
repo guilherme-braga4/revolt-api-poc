@@ -4,11 +4,19 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { Db } from './db.js';
 
-// Tabela do Google de nov/2026, ainda não conferida na fatura (RF09).
+// Tabela do Google de nov/2026, ainda não conferida na fatura (RF09). A rota e a busca ao longo da rota foram conferidas
+// na página oficial de preços em 19/11/2026.
 const PRECOS = {
   busca_area: { sku: 'Nearby Search Pro (id e coordenada)', gratis_mes: 5000, usd_por_mil: 32 },
   ficha: { sku: 'Place Details Enterprise + Atmosphere', gratis_mes: 1000, usd_por_mil: 25 },
+  // Sem trânsito, sem paradas intermediárias, sem otimizar a ordem e sem modificador de local: não sobe para o Pro.
+  rota: { sku: 'Compute Routes Essentials', gratis_mes: 10000, usd_por_mil: 5 },
+  // Só identificadores seria Essentials (grátis), mas o mapa precisa da coordenada de cada lugar, que é campo Pro.
+  busca_rota: { sku: 'Text Search Pro (id e coordenada, ao longo da rota)', gratis_mes: 5000, usd_por_mil: 32 },
 };
+type Coordenada = { lat: number; lng: number };
+// Nenhuma consulta espera o Google para sempre: passado o prazo, conta como Google fora do ar.
+const GOOGLE_TEMPO_LIMITE_MS = Number(process.env.GOOGLE_TEMPO_LIMITE_MS) || 10_000;
 // Varredura: o país é dividido em células de 0,6°. Cada célula é coberta por um círculo de até ~47 km, abaixo do limite
 // de 50 km da busca do Google. Se a busca volta cheia (20 lugares, o máximo), a célula é dividida em 4 e cada parte é buscada.
 const TAM_CELULA = 0.6;
@@ -24,6 +32,12 @@ const CELULA_PENDENTE = `NOT subdividida AND (consultada_em IS NULL
 
 // Só os campos da ficha, porque os campos pedidos definem o preço (RF05).
 const CAMPOS_FICHA = 'id,displayName,formattedAddress,location,businessStatus,currentOpeningHours,evChargeOptions,paymentOptions,googleMapsUri';
+// Rota do Google: só o que as paradas, a busca ao longo da rota e o desenho no mapa usam.
+const CAMPOS_ROTA = 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline';
+// Busca ao longo da rota: identificador e coordenada, o mínimo para pôr o lugar no mapa.
+const CAMPOS_BUSCA_ROTA = 'places.id,places.location';
+// Uma página da busca, o máximo do Google: uma consulta paga por pedido.
+const MAX_LUGARES_ROTA = 20;
 
 @Injectable()
 export class GoogleService {
@@ -63,7 +77,7 @@ export class GoogleService {
 
     let resposta: Response;
     try {
-      resposta = await fetch(url, init);
+      resposta = await fetch(url, { ...init, signal: AbortSignal.timeout(GOOGLE_TEMPO_LIMITE_MS) });
     } catch {
       resposta = null;
     }
@@ -195,6 +209,78 @@ export class GoogleService {
       [placeId, ficha.location.longitude, ficha.location.latitude],
     );
     return ficha;
+  }
+
+  // Rota do Google entre origem e destino, feita na hora (D-06 e D-07 da arquitetura). Sobre a linha dela o planejador escolhe
+  // as paradas, e a busca do Google ao longo dela traz os lugares do Google (UC10). Nada dela é guardado (RN22).
+  async rota(origem: Coordenada, destino: Coordenada): Promise<{ motivo?: string; rota?: { linha: string; distancia_m: number; duracao_s: number } }> {
+    const ponto = (p: Coordenada) => ({ location: { latLng: { latitude: p.lat, longitude: p.lng } } });
+    const r = await this.lerResposta(
+      await this.chamar('rota', `${process.env.GOOGLE_ROUTES_URL}/directions/v2:computeRoutes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY, 'X-Goog-FieldMask': CAMPOS_ROTA },
+        body: JSON.stringify({
+          origin: ponto(origem),
+          destination: ponto(destino),
+          travelMode: 'DRIVE',
+          routingPreference: 'TRAFFIC_UNAWARE',
+          languageCode: 'pt-BR',
+          regionCode: 'BR',
+          units: 'METRIC',
+        }),
+      }),
+    );
+    if (r.motivo) return { motivo: r.motivo };
+    // Sem rota entre os pontos, o Google responde {}.
+    const g = r.corpo.routes?.[0];
+    if (!g?.polyline?.encodedPolyline) return { motivo: 'sem_rota' };
+    return { rota: { linha: g.polyline.encodedPolyline, distancia_m: g.distanceMeters ?? 0, duracao_s: Number.parseInt(g.duration ?? '0', 10) } };
+  }
+
+  // UC10 e RF21: busca do Google ao longo da linha de uma rota, feita na hora. Do resultado, só o identificador de cada lugar
+  // fica guardado, para a ficha poder ser pedida depois; as coordenadas e o resto só passam (RN22). Nenhum cálculo sobre as
+  // coordenadas do Google, e todos os lugares devolvidos são entregues, mesmo os já vinculados (Q14).
+  async lugaresAoLongoDaRota(linha: string): Promise<{ motivo?: string; lugares?: { id: string; lat: number; lng: number }[] }> {
+    const r = await this.lerResposta(
+      await this.chamar('busca_rota', `${process.env.GOOGLE_PLACES_URL}/places:searchText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY, 'X-Goog-FieldMask': CAMPOS_BUSCA_ROTA },
+        body: JSON.stringify({
+          textQuery: 'eletroposto',
+          includedType: 'electric_vehicle_charging_station',
+          strictTypeFiltering: true,
+          pageSize: MAX_LUGARES_ROTA,
+          languageCode: 'pt-BR',
+          regionCode: 'BR',
+          searchAlongRouteParameters: { polyline: { encodedPolyline: linha } },
+        }),
+      }),
+    );
+    if (r.motivo) return { motivo: r.motivo };
+    const lugares: { id: string; lat: number; lng: number }[] = (r.corpo.places ?? [])
+      .filter((p) => p.id && p.location)
+      .map((p) => ({ id: p.id, lat: p.location.latitude, lng: p.location.longitude }));
+    // Lugar novo entra só com o identificador; o já guardado fica como está (a rota não renova coordenada).
+    await this.db.query(
+      `INSERT INTO google_lugar (place_id)
+       SELECT id FROM unnest($1::text[]) id
+       WHERE (SELECT ligada FROM fonte WHERE nome = 'google') -- busca em voo durante uma exclusão não regrava nada
+       ON CONFLICT (place_id) DO NOTHING`,
+      [lugares.map((l) => l.id)],
+    );
+    return { lugares };
+  }
+
+  // Corpo de uma resposta do Google, ou o motivo de não ter: recusa antes da consulta, Google fora do ar ou lento demais,
+  // ou consulta recusada pelo Google.
+  private async lerResposta(r: { motivo?: string; resposta?: Response }): Promise<{ motivo?: string; corpo?: any }> {
+    if (!r.resposta) return { motivo: r.motivo };
+    if (!r.resposta.ok) return { motivo: 'erro_da_fonte' };
+    try {
+      return { corpo: await r.resposta.json() };
+    } catch {
+      return { motivo: 'fora_do_ar' }; // o prazo acabou no meio da resposta, ou ela veio cortada
+    }
   }
 
   // RF06: apaga coordenadas com mais de 30 dias e mantém o identificador.

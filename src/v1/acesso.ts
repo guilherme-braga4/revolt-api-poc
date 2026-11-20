@@ -3,7 +3,8 @@
 //   valida a assinatura, o emissor e o público. Nada de senha guardada pelo REVOLT.
 // - Atestado do app: token do serviço de atestado (ex.: Firebase App Check) em "X-Atestado-App". Sem ele, o pedido não
 //   recebe dados do Google (RN18 da obtenção) nem gasta ficha paga.
-// - Trava contra ritmo de robô: limite de fichas do Google por aparelho, bem acima do uso humano. Não é limite por pessoa.
+// - Trava contra ritmo de robô: limite de fichas do Google e de viagens planejadas (rota e busca do Google) por aparelho,
+//   bem acima do uso humano. Não é limite por pessoa.
 import {
   ArgumentsHost, CanActivate, Catch, Controller, ExceptionFilter, ExecutionContext, Get, HttpException, Injectable, Logger, Req,
   UnauthorizedException, UseFilters, UseGuards,
@@ -29,14 +30,15 @@ function verificador(prefixo: 'CONTA' | 'ATESTADO') {
   };
 }
 
-const LIMITE_FICHAS = Number(process.env.LIMITE_FICHAS_GOOGLE ?? 60);
+// Pedidos que consultam o Google na hora, por aparelho a cada 10 minutos. Cada viagem planejada faz duas consultas pagas.
+const LIMITES = { fichas: Number(process.env.LIMITE_FICHAS_GOOGLE ?? 60), rotas: Number(process.env.LIMITE_ROTAS_GOOGLE ?? 20) };
 const JANELA_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class Acesso {
   private conta = verificador('CONTA');
   private atestado = verificador('ATESTADO');
-  private fichas = new Map<string, { inicio: number; n: number }>();
+  private janelas = { fichas: new Map<string, { inicio: number; n: number }>(), rotas: new Map<string, { inicio: number; n: number }>() };
 
   constructor() {
     if (!this.atestado) new Logger('Acesso').warn('ATESTADO_JWKS_URL vazio: atestado do app desligado (só para desenvolvimento).');
@@ -51,14 +53,16 @@ export class Acesso {
     return this.conta(/^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1]);
   }
 
-  // Janela fixa de 10 minutos por aparelho (cabeçalho X-Aparelho, gerado pelo app na instalação; sem ele, o IP).
-  dentroDoRitmo(req): boolean {
+  // Janela fixa de 10 minutos por aparelho (cabeçalho X-Aparelho, gerado pelo app na instalação; sem ele, o IP), contada
+  // à parte para fichas e para rotas.
+  dentroDoRitmo(req, tipo: keyof typeof LIMITES): boolean {
+    const janelas = this.janelas[tipo];
     const chave = String(req.headers['x-aparelho'] ?? req.ip).slice(0, 100);
     const agora = Date.now();
-    if (this.fichas.size > 10000) for (const [k, j] of this.fichas) if (agora - j.inicio >= JANELA_MS) this.fichas.delete(k);
-    let janela = this.fichas.get(chave);
-    if (!janela || agora - janela.inicio >= JANELA_MS) this.fichas.set(chave, (janela = { inicio: agora, n: 0 }));
-    return ++janela.n <= LIMITE_FICHAS;
+    if (janelas.size > 10000) for (const [k, j] of janelas) if (agora - j.inicio >= JANELA_MS) janelas.delete(k);
+    let janela = janelas.get(chave);
+    if (!janela || agora - janela.inicio >= JANELA_MS) janelas.set(chave, (janela = { inicio: agora, n: 0 }));
+    return ++janela.n <= LIMITES[tipo];
   }
 }
 

@@ -230,6 +230,98 @@
         ]
       }
     },
+    "/v1/viagens/planejar": {
+      "post": {
+        "description": "Pede ao Google uma rota entre origem e destino (Compute Routes Essentials) e escolhe, sobre a linha dela, paradas entre os postos do OCM e próprios compatíveis com o carro a até 5 km da linha (RN10), cada uma com um plano B ao alcance ou o aviso de que não há (RN11), e marca os trechos sem posto compatível ao alcance (UC04). Na mesma rota, faz a busca do Google ao longo dela (Text Search Pro, id e coordenada) e entrega os lugares separados das paradas. As duas consultas são pagas e conferidas uma a uma no teto do mês: primeiro a rota, depois a busca. Sem a rota (teto atingido, Google desligado ou fora do ar), não há paradas: 200 com disponivel false, motivo rota_indisponivel e link_externo para abrir só o destino no Google Maps. Sem a busca, a viagem segue só com OCM e próprios. Nada é guardado além do identificador de cada lugar do Google, que permite pedir a ficha depois.",
+        "operationId": "ViagensController_planejar",
+        "parameters": [
+          {
+            "name": "X-Aparelho",
+            "in": "header",
+            "description": "Identificador do aparelho, gerado pelo app, para a trava contra ritmo de robô.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Atestado-App",
+            "in": "header",
+            "description": "Token do atestado do app (D-09).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoPlanejarViagem"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespostaPlanejarViagem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Origem, destino, conectores ou autonomia ausentes ou fora dos limites.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Pedido sem atestado do app (erro atestado_invalido). O Google não é consultado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ritmo de robô: muitas viagens pelo mesmo aparelho (erro ritmo_de_robo). O Google não é consultado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Base de dados fora do ar (erro base_indisponivel). Sem conferir o teto, o Google não é consultado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Planejar uma viagem: paradas, plano B, trechos sem cobertura e lugares do Google na rota",
+        "tags": [
+          "viagens"
+        ]
+      }
+    },
     "/v1/conta": {
       "get": {
         "description": "Valida o token do provedor de login (D-04). A conta só é exigida para contribuir.",
@@ -442,6 +534,20 @@
             "nullable": true,
             "description": "Maior potência nominal em kW. null quando desconhecida."
           },
+          "acesso": {
+            "type": "string",
+            "enum": [
+              "publico",
+              "restrito"
+            ],
+            "nullable": true,
+            "description": "Acesso, o mesmo do filtro publico: a verificação em campo vence o tipo de uso do OCM. null quando não informado e nos lugares de origem google."
+          },
+          "gratuito": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Posto gratuito, pela mesma regra do filtro gratuito sobre o texto do preço. null quando o preço não é informado e nos lugares de origem google."
+          },
           "origem": {
             "type": "string",
             "enum": [
@@ -471,6 +577,8 @@
           "situacao",
           "conectores",
           "potencia_max_kw",
+          "acesso",
+          "gratuito",
           "origem",
           "verificacao",
           "atualizado_em",
@@ -1329,6 +1437,370 @@
         "required": [
           "erro",
           "mensagem",
+          "link_externo"
+        ]
+      },
+      "Ponto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "example": -23.19,
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "example": -45.88,
+            "minimum": -180,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "PedidoPlanejarViagem": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "description": "Origem da viagem (WGS 84).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "destino": {
+            "description": "Destino da viagem (WGS 84).",
+            "example": {
+              "lat": -22.52,
+              "lng": -44.1
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "conectores": {
+            "type": "array",
+            "description": "Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.",
+            "example": [
+              "CCS2",
+              "TIPO_2"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "CCS2",
+                "CCS1",
+                "TIPO_2",
+                "TIPO_1",
+                "CHADEMO",
+                "GBT",
+                "TESLA",
+                "TOMADA"
+              ]
+            }
+          },
+          "autonomia_km": {
+            "type": "number",
+            "description": "Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.",
+            "minimum": 10,
+            "maximum": 2000,
+            "example": 250
+          }
+        },
+        "required": [
+          "origem",
+          "destino",
+          "conectores",
+          "autonomia_km"
+        ]
+      },
+      "RotaGoogle": {
+        "type": "object",
+        "properties": {
+          "linha": {
+            "type": "string",
+            "description": "Linha da rota no formato codificado do Google (Encoded Polyline), só para desenhar sobre o mapa do Google. Não é guardada.",
+            "example": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"
+          },
+          "distancia_m": {
+            "type": "integer",
+            "description": "Distância da rota do Google, em metros.",
+            "example": 287000
+          },
+          "duracao_s": {
+            "type": "integer",
+            "description": "Duração da rota do Google sem trânsito, em segundos.",
+            "example": 12600
+          },
+          "origem": {
+            "type": "string",
+            "enum": [
+              "google"
+            ]
+          },
+          "condicoes_de_uso": {
+            "$ref": "#/components/schemas/CondicoesDeUso"
+          }
+        },
+        "required": [
+          "linha",
+          "distancia_m",
+          "duracao_s",
+          "origem",
+          "condicoes_de_uso"
+        ]
+      },
+      "PostoNaRota": {
+        "type": "object",
+        "properties": {
+          "km_na_rota": {
+            "type": "number",
+            "description": "Distância aproximada desde a origem, em km, medida sobre a linha da rota até o ponto mais perto do posto.",
+            "example": 96.4
+          },
+          "desvio_km": {
+            "type": "number",
+            "description": "Distância em linha reta do posto até a linha da rota, em km.",
+            "example": 0.8
+          },
+          "eletroposto": {
+            "description": "O posto, como no mapa. Sempre de origem open_charge_map ou verificacao_propria (RN10).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Pino"
+              }
+            ]
+          }
+        },
+        "required": [
+          "km_na_rota",
+          "desvio_km",
+          "eletroposto"
+        ]
+      },
+      "Parada": {
+        "type": "object",
+        "properties": {
+          "km_na_rota": {
+            "type": "number",
+            "description": "Distância aproximada desde a origem, em km, medida sobre a linha da rota até o ponto mais perto do posto.",
+            "example": 96.4
+          },
+          "desvio_km": {
+            "type": "number",
+            "description": "Distância em linha reta do posto até a linha da rota, em km.",
+            "example": 0.8
+          },
+          "eletroposto": {
+            "description": "O posto, como no mapa. Sempre de origem open_charge_map ou verificacao_propria (RN10).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Pino"
+              }
+            ]
+          },
+          "ordem": {
+            "type": "integer",
+            "description": "Posição da parada na viagem, a partir de 1.",
+            "example": 1
+          },
+          "plano_b": {
+            "nullable": true,
+            "description": "Plano B (RN11): outro posto compatível que o carro alcança com a autonomia que sobra ao chegar à parada, se ela não servir. É o mais perto da parada. null quando não há nenhum; aí aviso vem sem_plano_b.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PostoNaRota"
+              }
+            ]
+          },
+          "aviso": {
+            "type": "string",
+            "enum": [
+              "sem_plano_b"
+            ],
+            "nullable": true,
+            "description": "sem_plano_b: o app avisa nesta parada que não há alternativa ao alcance."
+          }
+        },
+        "required": [
+          "km_na_rota",
+          "desvio_km",
+          "eletroposto",
+          "ordem",
+          "plano_b",
+          "aviso"
+        ]
+      },
+      "TrechoSemCobertura": {
+        "type": "object",
+        "properties": {
+          "de_km": {
+            "type": "number",
+            "description": "Onde o trecho começa, em km desde a origem: a origem ou a parada anterior, o último ponto de recarga.",
+            "example": 96.4
+          },
+          "ate_km": {
+            "type": "number",
+            "description": "Onde o trecho acaba, em km desde a origem: o próximo posto compatível, ou o destino se não houver.",
+            "example": 175.2
+          },
+          "distancia_km": {
+            "type": "number",
+            "description": "Quanto o trecho consome, em km, com os desvios até os postos. É maior que a autonomia.",
+            "example": 80.1
+          },
+          "inicio": {
+            "description": "Coordenada do começo: a origem pedida ou o posto da parada anterior.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Localizacao"
+              }
+            ]
+          },
+          "fim": {
+            "description": "Coordenada do fim: o próximo posto compatível ou o destino pedido.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Localizacao"
+              }
+            ]
+          }
+        },
+        "required": [
+          "de_km",
+          "ate_km",
+          "distancia_km",
+          "inicio",
+          "fim"
+        ]
+      },
+      "LugaresGoogleNaViagem": {
+        "type": "object",
+        "properties": {
+          "disponivel": {
+            "type": "boolean",
+            "description": "true: a busca do Google ao longo da rota foi feita (a lista pode estar vazia). false: veja motivo."
+          },
+          "motivo": {
+            "type": "string",
+            "enum": [
+              "teto_atingido",
+              "desligada",
+              "fora_do_ar",
+              "sem_chave",
+              "erro_da_fonte",
+              "sem_rota"
+            ],
+            "nullable": true,
+            "description": "Por que não há lugares do Google: teto do mês atingido, camada desligada pelo Curador, Google fora do ar ou lento, consulta não configurada, consulta recusada pelo Google, ou sem rota entre os pontos. null quando disponível."
+          },
+          "mensagem": {
+            "type": "string",
+            "nullable": true,
+            "description": "Texto para o app mostrar quando não disponível."
+          },
+          "eletropostos": {
+            "description": "Todos os lugares que a busca do Google devolveu ao longo da rota, na ordem do Google, inclusive os já vinculados a um posto próprio ou perto de um do OCM (Q14): o mesmo posto pode aparecer como parada e como lugar do Google. Origem google, não verificados, sem nome nem conectores (vêm na ficha), sem plano B e fora das paradas (RN10).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pino"
+            }
+          }
+        },
+        "required": [
+          "disponivel",
+          "motivo",
+          "mensagem",
+          "eletropostos"
+        ]
+      },
+      "RespostaPlanejarViagem": {
+        "type": "object",
+        "properties": {
+          "disponivel": {
+            "type": "boolean",
+            "description": "true: a rota do Google veio e as paradas foram calculadas (as listas podem estar vazias). false: veja motivo."
+          },
+          "motivo": {
+            "type": "string",
+            "enum": [
+              "rota_indisponivel",
+              "sem_rota"
+            ],
+            "nullable": true,
+            "description": "Por que não há paradas. rota_indisponivel: não foi possível obter a rota do Google agora (veja causa); sem rota não há paradas, e o app oferece link_externo, que abre só o destino no Google Maps. sem_rota: o Google não achou rota de carro entre a origem e o destino. null quando disponível."
+          },
+          "causa": {
+            "type": "string",
+            "enum": [
+              "teto_atingido",
+              "desligada",
+              "fora_do_ar",
+              "sem_chave",
+              "erro_da_fonte"
+            ],
+            "nullable": true,
+            "description": "Só com rota_indisponivel: teto do mês atingido, Google desligado pelo Curador, Google fora do ar ou lento, consulta não configurada ou recusada pelo Google."
+          },
+          "mensagem": {
+            "type": "string",
+            "nullable": true,
+            "description": "Texto para o app mostrar quando não disponível."
+          },
+          "rota": {
+            "nullable": true,
+            "description": "Rota do Google, só para desenhar sobre o mapa do Google. null quando não disponível.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RotaGoogle"
+              }
+            ]
+          },
+          "paradas": {
+            "description": "Paradas sugeridas, na ordem da viagem, só com postos do OCM e próprios compatíveis com o carro (RN10), cada uma com plano B ou aviso (RN11). Vazia quando o destino está ao alcance da autonomia ou quando não disponível.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Parada"
+            }
+          },
+          "trechos_sem_cobertura": {
+            "description": "Trechos em que nenhum posto compatível está ao alcance da autonomia (UC04). A parada logo depois de um deles vem sem plano B.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrechoSemCobertura"
+            }
+          },
+          "eletropostos_google": {
+            "description": "Lugares do Google ao longo da mesma rota, separados das paradas (D-07).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LugaresGoogleNaViagem"
+              }
+            ]
+          },
+          "link_externo": {
+            "type": "string",
+            "format": "uri",
+            "description": "Abre a viagem no Google Maps por link público, sem consulta paga (RF07): origem, destino e as paradas (até 9; o navegador do celular aceita só 3). Sem rota, abre só o destino, partindo de onde o aparelho está."
+          }
+        },
+        "required": [
+          "disponivel",
+          "motivo",
+          "causa",
+          "mensagem",
+          "rota",
+          "paradas",
+          "trechos_sem_cobertura",
+          "eletropostos_google",
           "link_externo"
         ]
       },
