@@ -306,6 +306,8 @@ Toda viagem planejada também passa pelas regras RN10 e RN11 conferidas na respo
 
 A seção 13 cobre a Fase 4: o prazo da busca no OCM (um dublê que responde depois do prazo), a verificação com cada carregador e o tipo de restrição e as recusas, cada aviso ao Curador e o histórico do controle, a situação do corredor no trecho de teste do UC07, os indicadores contra uma contagem manual (seis motoristas, nove check-ins, uma remoção pelo Curador e a supressão de grupos pequenos) e a telemetria (cada tipo, as recusas, o retorno em 30 dias, a limpeza dos 90 dias e o ritmo por IP). Os indicadores e o corredor também têm testes unitários (`teste/indicadores.test.mjs`), inclusive os de RN13, RN18 e RN21.
 
+A seção 14 fecha as lacunas da auditoria de aceite (Wave E): a varredura pedida sem conta ou por motorista não começa (RN21), o mapa com as três origens e filtro de conector (Alteração 1 do app) e o lugar do Google vinculado a um posto próprio, que sai do mapa mas continua na rota (Alteração 7 da obtenção). Ela começa zerando o banco. As regras da obtenção também têm testes unitários: `teste/obtencao.test.mjs` (RN01, RN03, RN04, RN05, RN10, RN13 e RN19) e `teste/google.test.mjs` (RN15 e RN21, com banco e Google falsos).
+
 Toda resposta da `/v1` passa por um script da coleção que a compara com a especificação OpenAPI servida pela API: campo a mais, campo a menos ou tipo errado reprova. Todo pino e toda ficha também precisam trazer `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso` (RNF-01).
 
 **Pelo Newman, de uma vez:**
