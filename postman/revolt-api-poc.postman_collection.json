@@ -3306,6 +3306,16 @@
                   "  pm.expect(d.potencia_max_kw).to.eql(null);",
                   "});",
                   "pm.test('Lugar do Google sem filtro, no zoom alto', () => pm.expect(ids).to.include('google-lorena'));",
+                  "pm.test('Pino traz acesso e gratuito, pelas mesmas regras dos filtros', () => {",
+                  "  const acesso = (v) => pino(pm.collectionVariables.get(v)).acesso;",
+                  "  const gratuito = (v) => pino(pm.collectionVariables.get(v)).gratuito;",
+                  "  pm.expect([acesso('p_tipo2_gratis'), acesso('p_ccs2_restrito'), acesso('p_chademo'), acesso('p_desconhecido')]).to.eql(['publico', 'restrito', 'publico', null]);",
+                  "  pm.expect([gratuito('p_tipo2_gratis'), gratuito('p_ccs2_restrito'), gratuito('p_chademo'), gratuito('p_desconhecido')]).to.eql([true, false, null, null]);",
+                  "});",
+                  "pm.test('Lugar do Google sem acesso nem gratuito (nenhum dado do Google no pino)', () => {",
+                  "  const g = pino('google-lorena');",
+                  "  pm.expect([g.acesso, g.gratuito]).to.eql([null, null]);",
+                  "});",
                   "pm.test('Nada oculto', () => pm.expect(r.ocultos).to.eql({ total: 0, por_motivo: { conector: 0, potencia: 0, rapida: 0, publico: 0, gratuito: 0 }, sem_contagem: { ha_ocultos: false, motivo: null } }));"
                 ]
               }

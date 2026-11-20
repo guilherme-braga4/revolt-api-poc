@@ -31,7 +31,7 @@ b AS MATERIALIZED (
 SELECT (SELECT comprimento_m FROM linha) / 1000 AS distancia_km,
        (SELECT coalesce(json_agg(c ORDER BY c.km, c.id), '[]') FROM (
           SELECT b.id, b.origem, b.nome, b.lat, b.lng, b.provedor, b.licenca, b.data_fonte, b.situacao, b.funcionamento,
-                 b.data_observacao, b.verificado, x.tipos, x.potencia_max_kw,
+                 b.data_observacao, b.verificado, b.acesso, b.gratuito, x.tipos, x.potencia_max_kw,
                  ST_LineLocatePoint(l.plana, p.ponto) * l.comprimento_m / 1000 AS km,
                  ST_Distance(l.plana, p.ponto) / 1000 AS desvio_km
           FROM b, linha l, ${TIPOS_E_POTENCIA},

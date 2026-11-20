@@ -30,9 +30,10 @@ export const POSTOS_ENTREGUES = `
          v.vigente AS verificado,
          CASE WHEN v.vigente THEN coalesce(e.conectores_observados, e.conectores) ELSE e.conectores END AS conectores,
          CASE WHEN v.vigente THEN coalesce(e.acesso, e.acesso_fonte) ELSE e.acesso_fonte END AS acesso,
-         CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco
+         p.preco, p.preco ~* '${GRATUITO}' AS gratuito -- null quando o preço não é informado
   FROM eletroposto e,
-       LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v
+       LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v,
+       LATERAL (SELECT CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco) p
   WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS}`;
 
 // Tipos de conector e maior potência de cada posto, a partir dos conectores de um POSTOS_ENTREGUES chamado b.
@@ -59,7 +60,7 @@ com_filtros AS MATERIALIZED (
          ($6::numeric IS NULL OR coalesce(x.potencia_max_kw >= $6::numeric, false)) AS ok_potencia,
          (NOT $7::boolean OR x.tipos && '{${TIPOS_RAPIDA.join(',')}}'::text[]) AS ok_rapida,
          (NOT $8::boolean OR coalesce(b.acesso = 'publico', false)) AS ok_publico,
-         (NOT $9::boolean OR coalesce(b.preco ~* '${GRATUITO}', false)) AS ok_gratuito
+         (NOT $9::boolean OR coalesce(b.gratuito, false)) AS ok_gratuito
   FROM base b, ${TIPOS_E_POTENCIA}
 ),
 visiveis AS (
@@ -84,7 +85,8 @@ SELECT
      FROM com_filtros) o) AS ocultos,
   (SELECT coalesce(json_agg(c ORDER BY c.cy, c.cx), '[]') FROM celulas c WHERE c.quantidade > 1) AS grupos,
   (SELECT coalesce(json_agg(v ORDER BY v.id), '[]') FROM (
-     SELECT id, origem, nome, lat, lng, provedor, licenca, data_fonte, situacao, funcionamento, data_observacao, verificado, tipos, potencia_max_kw
+     SELECT id, origem, nome, lat, lng, provedor, licenca, data_fonte, situacao, funcionamento, data_observacao, verificado, tipos, potencia_max_kw,
+            acesso, gratuito
      FROM visiveis vi
      WHERE $10::float8 IS NULL
         OR EXISTS (SELECT 1 FROM celulas c WHERE c.quantidade = 1 AND c.cx = floor(vi.lng / $10::float8) AND c.cy = floor(vi.lat / $10::float8))) v
@@ -103,6 +105,8 @@ export const pinoDaBase = (e) => ({
   situacao: (e.verificado && SITUACAO_POR_FUNCIONAMENTO[e.funcionamento]) || e.situacao,
   conectores: e.tipos,
   potencia_max_kw: e.potencia_max_kw,
+  acesso: e.acesso ?? null,
+  gratuito: e.gratuito ?? null,
   origem: e.origem,
   // Só observação em campo torna o posto verificado (RN13 da obtenção), e ela vale como a informação mais confiável.
   verificacao: e.verificado ? { situacao: 'verificado', data: e.data_observacao } : NAO_VERIFICADO,
@@ -118,6 +122,8 @@ export const pinoDoGoogle = (g) => ({
   situacao: 'desconhecida',
   conectores: null,
   potencia_max_kw: null,
+  acesso: null,
+  gratuito: null,
   origem: 'google',
   verificacao: NAO_VERIFICADO,
   atualizado_em: diaEmBrasilia(g.data_fonte),

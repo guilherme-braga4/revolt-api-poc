@@ -534,6 +534,20 @@
             "nullable": true,
             "description": "Maior potência nominal em kW. null quando desconhecida."
           },
+          "acesso": {
+            "type": "string",
+            "enum": [
+              "publico",
+              "restrito"
+            ],
+            "nullable": true,
+            "description": "Acesso, o mesmo do filtro publico: a verificação em campo vence o tipo de uso do OCM. null quando não informado e nos lugares de origem google."
+          },
+          "gratuito": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Posto gratuito, pela mesma regra do filtro gratuito sobre o texto do preço. null quando o preço não é informado e nos lugares de origem google."
+          },
           "origem": {
             "type": "string",
             "enum": [
@@ -563,6 +577,8 @@
           "situacao",
           "conectores",
           "potencia_max_kw",
+          "acesso",
+          "gratuito",
           "origem",
           "verificacao",
           "atualizado_em",

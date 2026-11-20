@@ -85,6 +85,16 @@ export class Pino {
   @ApiProperty({ type: [String], enum: TIPOS_CONECTOR, nullable: true, description: 'Tipos de conector, para marcar a compatibilidade com o carro. null nos lugares de origem google.' })
   conectores: string[] | null;
   @ApiProperty({ type: Number, nullable: true, description: 'Maior potência nominal em kW. null quando desconhecida.' }) potencia_max_kw: number | null;
+  @ApiProperty({
+    type: String, enum: ['publico', 'restrito'], nullable: true,
+    description: 'Acesso, o mesmo do filtro publico: a verificação em campo vence o tipo de uso do OCM. null quando não informado e nos lugares de origem google.',
+  })
+  acesso: string | null;
+  @ApiProperty({
+    type: Boolean, nullable: true,
+    description: 'Posto gratuito, pela mesma regra do filtro gratuito sobre o texto do preço. null quando o preço não é informado e nos lugares de origem google.',
+  })
+  gratuito: boolean | null;
   @ApiProperty({ enum: ORIGENS, description: 'De onde vem o item. Define as condições de uso.' }) origem: string;
   @ApiProperty({ type: Verificacao }) verificacao: Verificacao;
   @ApiProperty({ ...DIA, description: 'Dia da informação mais confiável: a verificação em campo, se houver; senão, o dia em que a fonte foi obtida.' })
