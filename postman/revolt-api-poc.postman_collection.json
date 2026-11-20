@@ -10258,6 +10258,490 @@
             "header": [],
             "url": "{{base_url}}/postos-proprios/{{d2_proprio}}"
           }
+        },
+        {
+          "name": "Avisos: a última atualização do OCM falhou pelo prazo (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Só o aviso da atualização do OCM, com o motivo e a data', () => {",
+                  "  pm.expect(tipos).to.eql(['atualizacao_ocm_falhou']);",
+                  "  pm.expect(av[0].mensagem).to.include('OCM não respondeu no prazo de 2 s');",
+                  "  pm.expect(new Date(av[0].desde).getTime()).to.be.above(Date.now() - 600000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Atualizar o OCM de novo, agora com sucesso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: 1.040 fichas do Google no mês (US$ 1,00 depois das 1.000 grátis)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/consultas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ficha\",\n  \"quantidade\": 1040\n}"
+            }
+          }
+        },
+        {
+          "name": "Teto de US$ 1,20: o gasto chega a 83%",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Gasto de US$ 1,00, sem teto atingido', () => pm.expect([pm.response.json().gasto_usd, pm.response.json().teto_atingido]).to.eql([1, false]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 1.2,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: gasto a 80% do teto ou mais (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Aviso de teto próximo, e o do OCM sumiu', () => {",
+                  "  pm.expect(tipos).to.eql(['teto_proximo']);",
+                  "  pm.expect(av[0].mensagem).to.include('83% do teto');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Teto de US$ 1,00: atingido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Teto atingido', () => pm.expect(pm.response.json().teto_atingido).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 1,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Desligar a fonte google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Excluir os dados do provedor 999 do OCM (desliga e apaga)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada a apagar', () => pm.expect(pm.response.json().apagados).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/999/excluir-dados",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: teto atingido, fonte e provedor desligados (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Um aviso para cada situação', () => pm.expect(tipos).to.eql(['teto_atingido', 'fonte_desligada', 'provedor_ocm_desligado']));",
+                  "pm.test('Fonte e provedor com autor e data da mudança', () => {",
+                  "  pm.expect(av[1].mensagem).to.eql('A fonte google está desligada (por Curador).');",
+                  "  pm.expect(av[2].mensagem).to.eql('O provedor 999 do OCM está desligado (por Curador).');",
+                  "  pm.expect(new Date(av[1].desde).getTime()).to.be.above(Date.now() - 600000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Preparar: apuração do gasto quebrada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/apuracao",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"quebrada\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: o gasto não pode ser apurado (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Aviso de falha na apuração no lugar do aviso de teto; os demais continuam', () =>",
+                  "  pm.expect(tipos).to.eql(['gasto_nao_apurado', 'fonte_desligada', 'provedor_ocm_desligado']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Preparar: apuração do gasto de volta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/apuracao",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"normal\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Religar a fonte google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Religar o provedor 999 do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/999",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Teto de volta a US$ 50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 50,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: tudo normal (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Nenhum aviso', () => pm.expect(av).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Histórico das mudanças de teto, fontes e provedores, com data e autor (D3, UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const h = pm.response.json();",
+                  "pm.test('Cada mudança, da mais recente para a mais antiga', () => pm.expect(h.map(({ alvo, de, para, autor }) => [alvo, de, para, autor])).to.eql([",
+                  "  ['teto', '1', '50', 'Curador'],",
+                  "  ['provedor_ocm:999', 'desligado', 'ligado', 'Curador'],",
+                  "  ['fonte:google', 'desligada', 'ligada', 'Curador'],",
+                  "  ['provedor_ocm:999', null, 'dados excluídos (0 registros)', 'Curador'],",
+                  "  ['provedor_ocm:999', 'ligado', 'desligado', 'Curador'],",
+                  "  ['fonte:google', 'ligada', 'desligada', 'Curador'],",
+                  "  ['teto', '1.2', '1', 'Curador'],",
+                  "  ['teto', '50', '1.2', 'Curador'],",
+                  "]));",
+                  "pm.test('Com a data de cada uma', () => h.forEach((m) => pm.expect(new Date(m.feita_em).getTime()).to.be.above(Date.now() - 600000)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/historico"
+          }
+        },
+        {
+          "name": "Avisos e histórico são só do Curador [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
         }
       ]
     }

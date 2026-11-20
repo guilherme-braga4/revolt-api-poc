@@ -122,6 +122,17 @@ INSERT INTO teto_google (id, valor_usd, alterado_por)
 VALUES (1, 50, 'Curador, decisão de 12/11/2026')
 ON CONFLICT DO NOTHING;
 
+-- Fase 4 (Alteração 4): toda mudança de teto, fonte ou provedor do OCM, com data e autor (UC06).
+-- alvo: 'teto', 'fonte:<nome>' ou 'provedor_ocm:<id>'; de e para em texto ('50' -> '80', 'ligada' -> 'desligada').
+CREATE TABLE IF NOT EXISTS historico_controle (
+  id serial PRIMARY KEY,
+  alvo text NOT NULL,
+  de text,
+  para text NOT NULL,
+  autor text NOT NULL,
+  feita_em timestamptz NOT NULL DEFAULT now()
+);
+
 -- Corredores verificados pelo Curador (RN05 do app): fora deles, o mapa avisa que a área não foi verificada.
 -- Semente: a Via Dutra do Discovery, 85 pontos a cada 4 km, sem os 30 km urbanos de cada ponta, com 3 km de cada lado.
 CREATE TABLE IF NOT EXISTS corredor_verificado (

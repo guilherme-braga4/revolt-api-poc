@@ -172,7 +172,7 @@ zerar();
 
 const TABELAS = ['ocm_posto', 'atualizacao_ocm', 'posto_proprio', 'verificacao', 'google_lugar', 'google_celula', 'consulta_google', 'fonte', 'ocm_provedor', 'teto_google',
   'conta', 'observacao', 'observacao_recusada', 'foto', 'contribuicao', 'reporte', 'reporte_envio',
-  'decisao', 'vinculo_duplicado', 'viagem'];
+  'decisao', 'vinculo_duplicado', 'viagem', 'historico_controle'];
 
 async function lerCorpo(req) {
   let texto = '';
@@ -292,10 +292,23 @@ async function tratar(req, res) {
     zerar();
     bancoMudo = false;
     await destravar();
+    await db.query('ALTER TABLE IF EXISTS consulta_google_fora RENAME TO consulta_google'); // desfaz o modo "quebrada" da apuração
     await db.query(`TRUNCATE ${TABELAS.filter((t) => !['fonte', 'teto_google'].includes(t)).join(', ')} RESTART IDENTITY CASCADE`);
     await db.query(`UPDATE fonte SET ligada = true, alterada_em = now(), alterada_por = 'reset do teste'`);
     await db.query(`UPDATE teto_google SET valor_usd = 50, alterado_em = now(), alterado_por = 'reset do teste'`);
     return json(res, 200, { ok: true, banco });
+  }
+  // Consultas pagas ao Google já feitas no mês, para levar o gasto perto do teto sem chamar o Google.
+  if (rota === 'POST /__apoio/consultas') {
+    const { tipo, quantidade } = await lerCorpo(req);
+    await db.query(`INSERT INTO consulta_google (tipo, resultado) SELECT $1, '200' FROM generate_series(1, $2::int)`, [tipo, quantidade]);
+    return json(res, 200, { ok: true });
+  }
+  // Falha na apuração do gasto: a tabela das consultas pagas some até o modo "normal" (ou o reset).
+  if (rota === 'POST /__apoio/apuracao') {
+    const quebrada = (await lerCorpo(req)).modo === 'quebrada';
+    await db.query(quebrada ? 'ALTER TABLE consulta_google RENAME TO consulta_google_fora' : 'ALTER TABLE IF EXISTS consulta_google_fora RENAME TO consulta_google');
+    return json(res, 200, { apuracao: quebrada ? 'quebrada' : 'normal' });
   }
   if (rota === 'POST /__apoio/ocm') {
     estado.ocm = (await lerCorpo(req)).modo;
