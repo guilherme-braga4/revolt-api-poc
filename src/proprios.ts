@@ -30,7 +30,7 @@ class CarregadorObservado {
 }
 
 // Atributos do RF07. Qualquer campo fora desta lista, como os do Google, é recusado pela validação (RN10).
-class NovaVerificacao {
+export class NovaVerificacao {
   @IsOptional() @IsInt() posto_proprio_id?: number;
   @IsOptional() @IsInt() ocm_id?: number;
   @IsIn(['campo'], { message: 'origem precisa ser "campo": só observação em campo é aceita, nunca dado do Google (RN01, RN10)' })
