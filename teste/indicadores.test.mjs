@@ -1,7 +1,8 @@
 // Testes unitários dos indicadores do Curador (Fase 4), sobre o código compilado.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { MINIMO_MOTORISTAS, indicadoresDoApp, situacaoDoCorredor } from '../dist/indicadores.js';
+import { MINIMO_MOTORISTAS, indicadoresDoApp, retornoEm30Dias, situacaoDoCorredor, usoDoApp } from '../dist/indicadores.js';
+import { TIPOS_EVENTO } from '../dist/vocabulario.js';
 
 const HOJE = '2026-11-20';
 const ocm = (id, extra = {}) => ({ id: `ocm-${id}`, origem: 'open_charge_map', nome: `Posto ${id}`, verificado: false, ...extra });
@@ -92,5 +93,35 @@ describe('Indicadores do app para o Curador (RF15 e RN21 do app)', () => {
     const r = indicadoresDoApp({ motoristas: 0, chegadas: 0, como_informado: 0, dados_ate: null }, []);
     assert.deepEqual(r.como_informado, { chegadas: null, como_informado: null, parcela: null, suprimido: true, dados_ate: null });
     assert.deepEqual(r.checkins_por_semana_no_corredor, { semanas: [], dados_ate: null });
+  });
+});
+
+describe('Retorno em 30 dias e uso do app (RF15 do app, D-10)', () => {
+  const JANELA = { de: '2026-09-22', ate: '2026-10-21' };
+
+  test('RN21: com menos de 5 identificadores na janela, o retorno sai sem números', () => {
+    assert.deepEqual(retornoEm30Dias({ abriram: 4, voltaram: 3, dados_ate: '2026-11-18' }, JANELA), {
+      abriram: null, voltaram: null, parcela: null, suprimido: true, primeira_abertura: JANELA, dados_ate: '2026-11-18',
+    });
+  });
+
+  test('retorno bate com a contagem manual', () => {
+    // 6 identificadores abriram o app pela primeira vez na janela; 3 abriram de novo em outro dia em até 30 dias.
+    assert.deepEqual(retornoEm30Dias({ abriram: 6, voltaram: 3, dados_ate: '2026-11-18' }, JANELA), {
+      abriram: 6, voltaram: 3, parcela: 0.5, suprimido: false, primeira_abertura: JANELA, dados_ate: '2026-11-18',
+    });
+  });
+
+  test('uso do app soma as contagens diárias por tipo, com zero no tipo sem evento', () => {
+    const linhas = [
+      { tipo: 'app_aberto', quantidade: 10, trechos: 0, paradas: 0, dados_ate: '2026-11-20' },
+      { tipo: 'viagem_planejada', quantidade: 2, trechos: 2, paradas: 4, dados_ate: '2026-11-19' },
+      { tipo: 'legenda_aberta', quantidade: 1, trechos: 0, paradas: 0, dados_ate: '2026-11-18' },
+    ];
+    assert.deepEqual(usoDoApp(linhas, TIPOS_EVENTO), {
+      app_aberto: 10, uso_sem_conexao: 0, legenda_aberta: 1, viagem_planejada: 2, viagem_salva: 0, viagem_aberta_na_navegacao: 0,
+      trechos_sem_cobertura: 2, paradas_sem_plano_b: 4, dados_ate: '2026-11-20',
+    });
+    assert.deepEqual(usoDoApp([], TIPOS_EVENTO).dados_ate, null);
   });
 });

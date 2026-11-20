@@ -71,3 +71,23 @@ export function indicadoresDoApp(chegadas: Grupo & { chegadas: number; como_info
     },
   };
 }
+
+// Motoristas que voltam em 30 dias (RF15 do app): dos identificadores rotativos com a primeira abertura na janela, quantos
+// abriram o app de novo em outro dia em até 30 dias. Cada identificador é um aparelho por 30 dias; com menos de 5, suprimido.
+export function retornoEm30Dias(r: { abriram: number; voltaram: number; dados_ate: string | null }, primeira_abertura: { de: string; ate: string }) {
+  return {
+    ...semIdentificar(r.abriram, { abriram: r.abriram, voltaram: r.voltaram, parcela: r.abriram ? r.voltaram / r.abriram : null }),
+    primeira_abertura,
+    dados_ate: r.dados_ate,
+  };
+}
+
+// Uso do app no período (D-10): soma das contagens diárias por tipo. Tipo sem evento sai com zero.
+export function usoDoApp(linhas: { tipo: string; quantidade: number; trechos: number; paradas: number; dados_ate: string }[], tipos: string[]) {
+  const uso: Record<string, number | string | null> = {};
+  for (const tipo of tipos) uso[tipo] = linhas.find((l) => l.tipo === tipo)?.quantidade ?? 0;
+  uso.trechos_sem_cobertura = linhas.reduce((soma, l) => soma + l.trechos, 0);
+  uso.paradas_sem_plano_b = linhas.reduce((soma, l) => soma + l.paradas, 0);
+  uso.dados_ate = linhas.map((l) => l.dados_ate).sort().pop() ?? null;
+  return uso;
+}

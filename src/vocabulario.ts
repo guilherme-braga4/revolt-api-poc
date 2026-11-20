@@ -49,3 +49,6 @@ export const diaEmBrasilia = (instante: Date | string) =>
   new Date(instante).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
 export const NAO_VERIFICADO = { situacao: 'nao_verificado', data: null };
+
+// Tipos de evento da telemetria própria do app (D-10). Lista fechada: outro tipo é recusado.
+export const TIPOS_EVENTO = ['app_aberto', 'uso_sem_conexao', 'legenda_aberta', 'viagem_planejada', 'viagem_salva', 'viagem_aberta_na_navegacao'];

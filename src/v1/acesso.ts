@@ -32,14 +32,23 @@ function verificador(prefixo: 'CONTA' | 'ATESTADO') {
 }
 
 // Pedidos que consultam o Google na hora, por aparelho a cada 10 minutos. Cada viagem planejada faz duas consultas pagas.
-const LIMITES = { fichas: Number(process.env.LIMITE_FICHAS_GOOGLE ?? 60), rotas: Number(process.env.LIMITE_ROTAS_GOOGLE ?? 20) };
+// Envios de telemetria: por IP a cada 10 minutos.
+const LIMITES = {
+  fichas: Number(process.env.LIMITE_FICHAS_GOOGLE ?? 60),
+  rotas: Number(process.env.LIMITE_ROTAS_GOOGLE ?? 20),
+  eventos: Number(process.env.LIMITE_EVENTOS ?? 120),
+};
 const JANELA_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class Acesso {
   private conta = verificador('CONTA');
   private atestado = verificador('ATESTADO');
-  private janelas = { fichas: new Map<string, { inicio: number; n: number }>(), rotas: new Map<string, { inicio: number; n: number }>() };
+  private janelas = {
+    fichas: new Map<string, { inicio: number; n: number }>(),
+    rotas: new Map<string, { inicio: number; n: number }>(),
+    eventos: new Map<string, { inicio: number; n: number }>(),
+  };
 
   constructor() {
     if (!this.atestado) new Logger('Acesso').warn('ATESTADO_JWKS_URL vazio: atestado do app desligado (só para desenvolvimento).');
@@ -55,10 +64,10 @@ export class Acesso {
   }
 
   // Janela fixa de 10 minutos por aparelho (cabeçalho X-Aparelho, gerado pelo app na instalação; sem ele, o IP), contada
-  // à parte para fichas e para rotas.
+  // à parte para fichas, rotas e eventos. Nos eventos, só o IP: a telemetria não usa identificador do aparelho.
   dentroDoRitmo(req, tipo: keyof typeof LIMITES): boolean {
     const janelas = this.janelas[tipo];
-    const chave = String(req.headers['x-aparelho'] ?? req.ip).slice(0, 100);
+    const chave = String((tipo === 'eventos' ? null : req.headers['x-aparelho']) ?? req.ip).slice(0, 100);
     const agora = Date.now();
     if (janelas.size > 10000) for (const [k, j] of janelas) if (agora - j.inicio >= JANELA_MS) janelas.delete(k);
     let janela = janelas.get(chave);

@@ -172,7 +172,7 @@ zerar();
 
 const TABELAS = ['ocm_posto', 'atualizacao_ocm', 'posto_proprio', 'verificacao', 'google_lugar', 'google_celula', 'consulta_google', 'fonte', 'ocm_provedor', 'teto_google',
   'conta', 'observacao', 'observacao_recusada', 'foto', 'contribuicao', 'reporte', 'reporte_envio',
-  'decisao', 'vinculo_duplicado', 'viagem', 'historico_controle'];
+  'decisao', 'vinculo_duplicado', 'viagem', 'historico_controle', 'evento_dia', 'abertura'];
 
 async function lerCorpo(req) {
   let texto = '';
@@ -309,6 +309,12 @@ async function tratar(req, res) {
     const quebrada = (await lerCorpo(req)).modo === 'quebrada';
     await db.query(quebrada ? 'ALTER TABLE consulta_google RENAME TO consulta_google_fora' : 'ALTER TABLE IF EXISTS consulta_google_fora RENAME TO consulta_google');
     return json(res, 200, { apuracao: quebrada ? 'quebrada' : 'normal' });
+  }
+  // Abertura do app de N dias atrás, mais antiga do que POST /v1/eventos aceita, para testar a limpeza dos 90 dias.
+  if (rota === 'POST /__apoio/abertura-antiga') {
+    const { id_rotativo, dias } = await lerCorpo(req);
+    await db.query('INSERT INTO abertura (id_rotativo, dia) VALUES ($1, current_date - $2::int) ON CONFLICT DO NOTHING', [id_rotativo, dias]);
+    return json(res, 200, { ok: true });
   }
   if (rota === 'POST /__apoio/ocm') {
     estado.ocm = (await lerCorpo(req)).modo;

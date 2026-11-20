@@ -105,7 +105,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}', '/v1/curador/indicadores']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}', '/v1/curador/indicadores', '/v1/eventos']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -11739,6 +11739,654 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Preparar: dias relativos a hoje em Brasília",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);",
+                  "const d = (n) => new Date(Date.parse(hoje) - n * 864e5).toISOString().slice(0, 10);",
+                  "for (const n of [0, 2, 10, 15, 18, 19, 20, 29, 31, 47]) pm.collectionVariables.set('dia_' + n, d(n));",
+                  "pm.collectionVariables.set('dia_amanha', d(-1));",
+                  "pm.collectionVariables.set('dia_mais_12', d(-12));",
+                  "pm.collectionVariables.set('dia_mais_30', d(-30));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria sem conta: um evento de cada tipo (D6, D-10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_20}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    },\n    {\n      \"tipo\": \"uso_sem_conexao\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_0}}\",\n      \"trechos_sem_cobertura\": 2,\n      \"paradas_sem_plano_b\": 1\n    },\n    {\n      \"tipo\": \"viagem_salva\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"viagem_aberta_na_navegacao\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Guarda só a contagem por dia e tipo, sem nada da pessoa ou do aparelho",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const linhas = pm.response.json();",
+                  "pm.test('Só dia, tipo e contagens', () => linhas.forEach((l) => pm.expect(Object.keys(l).sort()).to.eql(['dia', 'paradas_sem_plano_b', 'quantidade', 'tipo', 'trechos_sem_cobertura'])));",
+                  "pm.test('Os seis tipos contados', () => pm.expect(linhas.map((l) => l.tipo).sort()).to.eql(['app_aberto', 'legenda_aberta', 'uso_sem_conexao', 'viagem_aberta_na_navegacao', 'viagem_planejada', 'viagem_salva']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/evento_dia"
+          }
+        },
+        {
+          "name": "O identificador rotativo fica só com o dia de uso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Uma linha: identificador e dia', () => pm.expect(pm.response.json().map((l) => Object.keys(l).sort())).to.eql([['dia', 'id_rotativo']]));",
+                  "pm.test('O do app_aberto', () => pm.expect(pm.response.json()[0].id_rotativo).to.eql('a0000000-0000-4000-8000-00000000000a'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria juntada sem conexão e mandada depois, sem atestado [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_15}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_20}}\",\n      \"id_rotativo\": \"b0000000-0000-4000-8000-00000000000b\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_19}}\",\n      \"id_rotativo\": \"b0000000-0000-4000-8000-00000000000b\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_18}}\",\n      \"id_rotativo\": \"c0000000-0000-4000-8000-00000000000c\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_2}}\",\n      \"id_rotativo\": \"c0000000-0000-4000-8000-00000000000c\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_18}}\",\n      \"id_rotativo\": \"d0000000-0000-4000-8000-00000000000d\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"e0000000-0000-4000-8000-00000000000e\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"f0000000-0000-4000-8000-00000000000f\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"f0000000-0000-4000-8000-00000000000f\"\n    },\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_2}}\",\n      \"trechos_sem_cobertura\": 0,\n      \"paradas_sem_plano_b\": 3\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: tipo fora da lista [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"tipo must be one of\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"tela_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: app_aberto sem o identificador [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo vai só no evento app_aberto\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: identificador em outro evento, que ligaria os eventos [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo vai só no evento app_aberto\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: viagem planejada sem os trechos sem cobertura [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"trechos_sem_cobertura vai só no evento viagem_planejada\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_0}}\",\n      \"paradas_sem_plano_b\": 0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: dia no futuro, e o lote inteiro fica de fora [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"dia precisa estar entre\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_amanha}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: dia de mais de 30 dias atrás [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"dia precisa estar entre\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"uso_sem_conexao\",\n      \"dia\": \"{{dia_31}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: campo a mais, como uma posição [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"property lat should not exist\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\",\n      \"lat\": -23.19\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: identificador que não é UUID v4 aleatório [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo must be a UUID\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_0}}\",\n      \"id_rotativo\": \"6ba7b810-9dad-11d1-80b4-00c04fd430c8\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: mais de 100 eventos num envio [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"no more than 100\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: envio sem eventos [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"at least 1\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Indicadores: retorno em 30 dias e uso do app batem com a contagem manual (D6, RF15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "const v = (n) => pm.collectionVariables.get(n);",
+                  "// Contagem manual: a, b, c, d, e, f abriram o app pela primeira vez na janela; a (20 -> 15), b (20 -> 19) e c (18 -> 2)",
+                  "// voltaram em outro dia em até 30 dias; d e e não voltaram; f abriu duas vezes no mesmo dia, o que não é volta.",
+                  "pm.test('Retorno em 30 dias: 3 de 6', () => pm.expect(r.retorno_30_dias).to.eql({",
+                  "  abriram: 6, voltaram: 3, parcela: 0.5, suprimido: false, primeira_abertura: { de: v('dia_29'), ate: v('dia_0') }, dados_ate: v('dia_2'),",
+                  "}));",
+                  "// Contagem manual: 10 eventos app_aberto (1 + 9); um de cada outro tipo, e 2 viagens planejadas com 2 + 0 trechos e 1 + 3",
+                  "// paradas. Os envios recusados não contam.",
+                  "pm.test('Uso do app: só contagens', () => pm.expect(r.uso_do_app).to.eql({",
+                  "  app_aberto: 10, uso_sem_conexao: 1, legenda_aberta: 1, viagem_planejada: 2, viagem_salva: 1, viagem_aberta_na_navegacao: 1,",
+                  "  trechos_sem_cobertura: 2, paradas_sem_plano_b: 4, dados_ate: v('dia_0'),",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de={{dia_29}}&ate={{dia_mais_30}}"
+          }
+        },
+        {
+          "name": "Indicadores: janela com só 4 identificadores sai suprimida (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const v = (n) => pm.collectionVariables.get(n);",
+                  "pm.test('a, b, c e d na janela: sem números', () => pm.expect(pm.response.json().retorno_30_dias).to.eql({",
+                  "  abriram: null, voltaram: null, parcela: null, suprimido: true, primeira_abertura: { de: v('dia_47'), ate: v('dia_18') }, dados_ate: v('dia_2'),",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de={{dia_29}}&ate={{dia_mais_12}}"
+          }
+        },
+        {
+          "name": "Preparar: dia de uso de 91 dias atrás",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/abertura-antiga",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_rotativo\": \"00000000-0000-4000-8000-0000000000a9\",\n  \"dias\": 91\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dia de uso de 89 dias atrás",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/abertura-antiga",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_rotativo\": \"00000000-0000-4000-8000-0000000000b8\",\n  \"dias\": 89\n}"
+            }
+          }
+        },
+        {
+          "name": "Um envio de telemetria apaga os dias de uso com mais de 90 dias (RNF-09)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "O de 91 dias saiu; o de 89 ficou",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const ids = pm.response.json().map((l) => l.id_rotativo);",
+                  "pm.test('Limpeza dos 90 dias', () => {",
+                  "  pm.expect(ids).to.not.include('00000000-0000-4000-8000-0000000000a9');",
+                  "  pm.expect(ids).to.include('00000000-0000-4000-8000-0000000000b8');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria: muitos envios do mesmo IP em 10 minutos são recusados [sem atestado]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const corpo = JSON.stringify({ eventos: [{ tipo: 'legenda_aberta', dia: pm.collectionVariables.get('dia_0') }] });",
+                  "for (let i = 0; i < 20; i++)",
+                  "  pm.sendRequest({ url: pm.variables.get('base_url') + '/v1/eventos', method: 'POST', header: { 'Content-Type': 'application/json' }, body: { mode: 'raw', raw: corpo } }, () => {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 429', () => pm.response.to.have.status(429));",
+                  "",
+                  "pm.test('Erro muitos_pedidos', () => pm.expect(pm.response.json().erro).to.eql('muitos_pedidos'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
           }
         }
       ]

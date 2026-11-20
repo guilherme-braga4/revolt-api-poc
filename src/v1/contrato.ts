@@ -6,7 +6,7 @@ import {
   ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsBase64, IsBoolean, IsDateString, IsDefined, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID,
   Matches, Max, MaxLength, Min, ValidateIf, ValidateNested,
 } from 'class-validator';
-import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR } from '../vocabulario.js';
+import { ACESSOS, FUNCIONAMENTOS, ORIGENS, PAGAMENTOS, SITUACOES, TIPOS_CONECTOR, TIPOS_EVENTO } from '../vocabulario.js';
 
 const DIA = { type: String, format: 'date', example: '2026-11-12' };
 const comoBooleano = ({ value }) => (value === 'true' ? true : value === 'false' ? false : value);
@@ -671,10 +671,61 @@ export class IndicadorCheckinsNoCorredor {
   @ApiProperty(DADOS_ATE_DOC) dados_ate: string | null;
 }
 
+// Motoristas que voltam em 30 dias (RF15), pelo identificador aleatório que o app troca a cada 30 dias.
+export class IndicadorRetorno {
+  @ApiProperty({ type: Number, nullable: true, description: 'Identificadores com a primeira abertura do app na janela primeira_abertura.' })
+  abriram: number | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Desses, os que abriram o app de novo em outro dia, em até 30 dias.' }) voltaram: number | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'voltaram / abriram, de 0 a 1. null sem aberturas.' }) parcela: number | null;
+  @ApiProperty(SUPRIMIDO_DOC) suprimido: boolean;
+  @ApiProperty({
+    type: PeriodoIndicadores,
+    description: 'Janela da primeira abertura: os 30 dias que terminam 30 dias antes de ate, para todos terem tido 30 dias para voltar.',
+  })
+  primeira_abertura: PeriodoIndicadores;
+  @ApiProperty(DADOS_ATE_DOC) dados_ate: string | null;
+}
+
+// Contagem dos eventos de telemetria do app no período (D-10). Só contagens: nenhum evento identifica pessoa ou aparelho.
+export class UsoDoApp {
+  @ApiProperty({ type: 'integer', description: 'Aberturas do app (o app manda uma por dia).' }) app_aberto: number;
+  @ApiProperty({ type: 'integer', description: 'Usos do app sem conexão (Alteração 4).' }) uso_sem_conexao: number;
+  @ApiProperty({ type: 'integer', description: 'Aberturas da legenda (Alteração 4).' }) legenda_aberta: number;
+  @ApiProperty({ type: 'integer', description: 'Viagens planejadas (UC04).' }) viagem_planejada: number;
+  @ApiProperty({ type: 'integer', description: 'Viagens salvas (UC04).' }) viagem_salva: number;
+  @ApiProperty({ type: 'integer', description: 'Viagens abertas na navegação (UC04).' }) viagem_aberta_na_navegacao: number;
+  @ApiProperty({ type: 'integer', description: 'Trechos sem cobertura, somados nas viagens planejadas.' }) trechos_sem_cobertura: number;
+  @ApiProperty({ type: 'integer', description: 'Paradas sem plano B, somadas nas viagens planejadas.' }) paradas_sem_plano_b: number;
+  @ApiProperty(DADOS_ATE_DOC) dados_ate: string | null;
+}
+
 export class IndicadoresCurador {
   @ApiProperty({ type: PeriodoIndicadores }) periodo: PeriodoIndicadores;
   @ApiProperty({ type: String, format: 'date-time' }) calculado_em: string;
   @ApiProperty({ example: 5, description: 'Mínimo de motoristas distintos para um grupo mostrar números (RN21).' }) minimo_motoristas_por_grupo: number;
   @ApiProperty({ type: IndicadorComoInformado }) como_informado: IndicadorComoInformado;
   @ApiProperty({ type: IndicadorCheckinsNoCorredor }) checkins_por_semana_no_corredor: IndicadorCheckinsNoCorredor;
+  @ApiProperty({ type: IndicadorRetorno }) retorno_30_dias: IndicadorRetorno;
+  @ApiProperty({ type: UsoDoApp }) uso_do_app: UsoDoApp;
+}
+
+// POST /v1/eventos: telemetria própria do app (D-10). Sem conta, sem dado pessoal e sem identificador estável do aparelho.
+export class Evento {
+  @ApiProperty({ enum: TIPOS_EVENTO, description: 'Lista fechada de tipos.' }) @IsIn(TIPOS_EVENTO) tipo: string;
+  @ApiProperty({ ...DIA, description: 'Dia do evento em Brasília, de hoje até 30 dias atrás (o que juntou sem conexão vai depois).' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) dia: string;
+  @ApiProperty({
+    required: false, format: 'uuid',
+    description: 'Só em app_aberto, e obrigatório nele: UUID v4 aleatório que o app sorteia e troca 30 dias depois de sorteado. Nunca vai em outro evento.',
+  })
+  @IsOptional() @IsUUID('4') id_rotativo?: string;
+  @ApiProperty({ required: false, type: 'integer', minimum: 0, maximum: 50, description: 'Só em viagem_planejada, e obrigatório nele.' })
+  @IsOptional() @IsInt() @Min(0) @Max(50) trechos_sem_cobertura?: number;
+  @ApiProperty({ required: false, type: 'integer', minimum: 0, maximum: 50, description: 'Só em viagem_planejada, e obrigatório nele.' })
+  @IsOptional() @IsInt() @Min(0) @Max(50) paradas_sem_plano_b?: number;
+}
+
+export class PedidoEventos {
+  @ApiProperty({ type: [Evento], minItems: 1, maxItems: 100 })
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => Evento) eventos: Evento[];
 }

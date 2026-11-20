@@ -6,8 +6,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Db } from '../db.js';
-import { indicadoresDoApp } from '../indicadores.js';
-import { diaEmBrasilia } from '../vocabulario.js';
+import { indicadoresDoApp, retornoEm30Dias, usoDoApp } from '../indicadores.js';
+import { TIPOS_EVENTO, diaEmBrasilia } from '../vocabulario.js';
 import { CuradorGuard, ErrosV1 } from './acesso.js';
 import { CAMPOS_CORRIGIVEIS, DecisaoRegistrada, Erro, FilaCurador, IndicadoresCurador, PedidoDecisao, PedidoIndicadores } from './contrato.js';
 import { caminhoDaFoto } from './fotos.js';
@@ -50,6 +50,21 @@ FROM observacao o JOIN eletroposto e ON e.id = o.eletroposto_id AND e.origem <> 
 WHERE o.removida_em IS NULL AND o.data_observacao BETWEEN $1::date AND $2::date
   AND ST_Intersects((SELECT area FROM corredor_verificado WHERE nome = 'Via Dutra'), e.local::geometry)
 GROUP BY 1 ORDER BY 1`;
+
+// Retorno em 30 dias: identificadores rotativos com a primeira abertura entre $1 e $2 e quantos abriram o app de novo, em
+// outro dia, nos 30 dias seguintes. $3 é o fim do período.
+const SQL_RETORNO = `
+WITH primeira AS (SELECT id_rotativo, min(dia) AS dia FROM abertura GROUP BY 1)
+SELECT count(*)::int AS abriram,
+       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM abertura a WHERE a.id_rotativo = p.id_rotativo AND a.dia > p.dia AND a.dia <= p.dia + 30))::int AS voltaram,
+       (SELECT max(dia) FROM abertura WHERE dia <= $3::date) AS dados_ate
+FROM primeira p WHERE p.dia BETWEEN $1::date AND $2::date`;
+
+// Telemetria do app no período, por tipo (D-10).
+const SQL_USO = `
+SELECT tipo, sum(quantidade)::int AS quantidade, sum(trechos_sem_cobertura)::int AS trechos, sum(paradas_sem_plano_b)::int AS paradas,
+       max(dia) AS dados_ate
+FROM evento_dia WHERE dia BETWEEN $1::date AND $2::date GROUP BY tipo`;
 
 // Uma decisão é uma instrução só: o efeito (CTE alvo, que devolve o alvo e os dados guardados), o registro com data e
 // motivo e, no duplicado confirmado, o vínculo que oculta um dos postos. $1 tipo, $2 motivo, $3 conta do Curador.
@@ -124,8 +139,9 @@ export class CuradorController {
     summary: 'Indicadores do app',
     description:
       'Parcela das chegadas em que o posto estava como o app informou (o indicador principal) e check-ins por semana no corredor ' +
-      'da Via Dutra, no período pedido (padrão: os últimos 30 dias). Só agregados: grupo com menos de 5 motoristas distintos ' +
-      'sai sem números (RN21). Cada indicador traz o dia mais recente dos dados usados.',
+      'da Via Dutra, no período pedido (padrão: os últimos 30 dias); motoristas que voltam em 30 dias, pela primeira abertura do ' +
+      'app nos 30 dias que terminam 30 dias antes de ate; e as contagens da telemetria do app. Só agregados: grupo com menos de 5 ' +
+      'motoristas distintos sai sem números (RN21). Cada indicador traz o dia mais recente dos dados usados.',
   })
   @ApiOkResponse({ type: IndicadoresCurador })
   @ApiBadRequestResponse({ type: Erro, description: 'Data malformada ou de depois de ate (erro pedido_invalido).' })
@@ -135,8 +151,21 @@ export class CuradorController {
     const ate = q.ate ?? diaEmBrasilia(new Date());
     const de = q.de ?? new Date(Date.parse(ate) - 29 * 86_400_000).toISOString().slice(0, 10);
     if (de > ate) throw new BadRequestException('de precisa ser igual ou anterior a ate');
-    const [[chegadas], semanas] = await Promise.all([this.db.query(SQL_CHEGADAS, [de, ate]), this.db.query(SQL_SEMANAS, [de, ate])]);
-    return { periodo: { de, ate }, calculado_em: new Date().toISOString(), ...indicadoresDoApp(chegadas, semanas) };
+    const dia = (dias: number) => new Date(Date.parse(ate) - dias * 86_400_000).toISOString().slice(0, 10);
+    const primeira_abertura = { de: dia(59), ate: dia(30) };
+    const [[chegadas], semanas, [retorno], uso] = await Promise.all([
+      this.db.query(SQL_CHEGADAS, [de, ate]),
+      this.db.query(SQL_SEMANAS, [de, ate]),
+      this.db.query(SQL_RETORNO, [primeira_abertura.de, primeira_abertura.ate, ate]),
+      this.db.query(SQL_USO, [de, ate]),
+    ]);
+    return {
+      periodo: { de, ate },
+      calculado_em: new Date().toISOString(),
+      ...indicadoresDoApp(chegadas, semanas),
+      retorno_30_dias: retornoEm30Dias(retorno, primeira_abertura),
+      uso_do_app: usoDoApp(uso, TIPOS_EVENTO),
+    };
   }
 
   @Post('decisoes')

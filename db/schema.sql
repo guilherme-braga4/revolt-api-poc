@@ -422,3 +422,21 @@ CREATE TABLE IF NOT EXISTS vinculo_duplicado (
   decisao_id integer NOT NULL REFERENCES decisao (id),
   criado_em timestamptz NOT NULL DEFAULT now()
 );
+
+-- Fase 4 (D-10): telemetria própria do app, sem pessoa. Só a contagem por dia e tipo; nada identifica o aparelho.
+CREATE TABLE IF NOT EXISTS evento_dia (
+  dia date NOT NULL,
+  tipo text NOT NULL,
+  quantidade integer NOT NULL,
+  trechos_sem_cobertura integer NOT NULL DEFAULT 0, -- soma, nas viagens planejadas
+  paradas_sem_plano_b integer NOT NULL DEFAULT 0,   -- soma, nas viagens planejadas
+  PRIMARY KEY (dia, tipo)
+);
+-- Dias de uso de cada identificador aleatório que o app sorteia e troca a cada 30 dias, só para o retorno em 30 dias
+-- (RF15 do app). Evento bruto: apagado depois de 90 dias (RNF-09).
+CREATE TABLE IF NOT EXISTS abertura (
+  id_rotativo uuid NOT NULL,
+  dia date NOT NULL,
+  PRIMARY KEY (id_rotativo, dia)
+);
+CREATE INDEX IF NOT EXISTS abertura_dia ON abertura (dia);
