@@ -1,5 +1,6 @@
 // Servidor de apoio aos testes do Postman/Newman. Não chama nenhum serviço real.
-// 1) Dublês do Open Charge Map (/ocm/v3/poi) e do Google Places (/google/v1/...), com contagem de chamadas.
+// 1) Dublês do Open Charge Map (/ocm/v3/poi), do Google Places (/google/v1/...) e do Google Routes (/google-rotas/...),
+//    com contagem de chamadas.
 // 2) Preparo e inspeção do banco de teste (/__apoio/...): reset, coordenadas antigas e busca de texto nas tabelas.
 // 3) Dublês do login gerenciado e do atestado do app (/__apoio/jwks e /__apoio/token), com chaves geradas ao subir.
 // 4) Proxy entre a API de teste e o Postgres (porta do DATABASE_URL), para simular quedas de conexão (/__apoio/banco...).
@@ -46,6 +47,21 @@ const OCM_V2 = [
   ...OCM_V1.filter((p) => p.ID !== 9010).map((p) => (p.ID === 9001 ? { ...p, UsageCost: 'R$ 2,00/kWh' } : p)),
   poi(9011, CC_BY, -22.8162, -45.1935), // Guaratinguetá
 ];
+// Postos para o planejamento de viagem (seção 11), ao longo da rota do dublê pela Dutra, de São José dos Campos a Volta
+// Redonda (~209 km). O km de cada um é a distância aproximada desde a origem. Um posto próprio em Taubaté (km 36) é criado
+// pela própria seção. Para carro CCS2, não há posto compatível entre Lorena (km 95) e Resende (km 170).
+const CCS2 = { ConnectionType: { Title: 'CCS (Type 2)' }, PowerKW: 60, Quantity: 2 };
+const OCM_VIAGEM = [
+  poi(9101, CC_BY, -23.1905, -45.879), // km 0, São José dos Campos
+  poi(9102, CC_BY, -23.031, -45.559), // km 37, Taubaté
+  poi(9104, CC_BY, -22.811, -45.188, { Connections: [CCS2, { ConnectionType: { Title: 'CHAdeMO' }, PowerKW: 50, Quantity: 1 }] }), // km 83, Guaratinguetá: o único CHAdeMO
+  poi(9105, CC_BY, -22.741, -45.108), // km 95, Lorena
+  poi(9106, CC_BY, -22.591, -44.969, { Connections: [{ ConnectionType: { Title: 'Type 2 (Socket Only)' }, PowerKW: 22, Quantity: 2 }] }), // km 117, Cruzeiro: só Tipo 2
+  poi(9107, CC_BY, -22.541, -44.779, { StatusType: { ID: 100, Title: 'Not Operational', IsOperational: false } }), // km 137, Queluz: fora de operação
+  poi(9108, CC_BY, -22.471, -44.449), // km 172, Resende
+  poi(9109, CC_BY, -22.48, -44.47), // km 170, Resende, a uns 2 km do 9108
+  poi(9110, CC_BY, -22.739, -45.591), // Campos do Jordão: CCS2, mas a mais de 20 km da rota
+];
 
 // ---------- Dublê do Google Places ----------
 const LUGARES = [
@@ -61,7 +77,39 @@ const LUGARES = [
     nome: `Eletroposto Dublê da diagonal ${k + 1}`,
     endereco: 'Estrada do Dublê',
   })),
+  // Só aparecem na busca ao longo da rota, longe da região da varredura: em Volta Redonda (fim da rota), no meio do trecho
+  // sem posto CCS2 (Cruzeiro a Queluz) e a uns 40 m do posto 9108 do OCM, em Resende (Q14: o mesmo posto vem nas duas listas).
+  { id: 'dubleRota', lat: -22.52, lng: -44.1, nome: 'Eletroposto Dublê da Rota', endereco: 'Rodovia Presidente Dutra, km 270 - Barra Mansa' },
+  { id: 'dubleViagem', lat: -22.56, lng: -44.85, nome: 'Eletroposto Dublê do Trecho', endereco: 'Rodovia Presidente Dutra, km 20 - Queluz' },
+  { id: 'dubleResende', lat: -22.4713, lng: -44.4493, nome: 'Eletroposto Dublê de Resende', endereco: 'Rodovia Presidente Dutra - Resende' },
 ];
+const LUGARES_NA_ROTA = ['dubleA', 'dubleB', 'dubleViagem', 'dubleResende', 'dubleRota'].map((id) => LUGARES.find((l) => l.id === id));
+
+// Linha no formato codificado do Google (Encoded Polyline), como a Routes API devolve.
+function codificarLinha(pontos) {
+  const numero = (v) => {
+    let n = v < 0 ? ~(v << 1) : v << 1;
+    let saida = '';
+    for (; n >= 0x20; n >>= 5) saida += String.fromCharCode((0x20 | (n & 0x1f)) + 63);
+    return saida + String.fromCharCode(n + 63);
+  };
+  let lat = 0;
+  let lng = 0;
+  return pontos
+    .map(([la, ln]) => {
+      const [a, b] = [Math.round(la * 1e5), Math.round(ln * 1e5)];
+      const trecho = numero(a - lat) + numero(b - lng);
+      [lat, lng] = [a, b];
+      return trecho;
+    })
+    .join('');
+}
+// Rota do dublê: a Dutra de São José dos Campos a Volta Redonda, ~209 km, em 18 pontos.
+const LINHA_ROTA = codificarLinha([
+  [-23.19, -45.88], [-23.15, -45.79], [-23.105, -45.71], [-23.06, -45.62], [-23.03, -45.56], [-22.94, -45.45],
+  [-22.9, -45.31], [-22.85, -45.23], [-22.81, -45.19], [-22.74, -45.11], [-22.67, -45.02], [-22.59, -44.97],
+  [-22.54, -44.78], [-22.495, -44.56], [-22.47, -44.45], [-22.5, -44.3], [-22.54, -44.17], [-22.52, -44.1],
+]);
 const distanciaM = (a, b) => {
   const rad = Math.PI / 180;
   const x = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
@@ -109,7 +157,17 @@ async function token({ tipo = 'atestado', sub = 'pessoa-teste', expirado = false
 
 // ---------- Estado dos dublês ----------
 let estado;
-const zerar = () => (estado = { ocm: 'v1', google: 'ok', chamadas: { ocm: 0, google_busca: 0, google_ficha: 0 }, mascaras: {}, raio_max_m: 0 });
+// Modos do Google: ok, fora_do_ar, e só na rota: sem_rota, linha_invalida, sem_lugares_na_rota, busca_fora_do_ar e lento
+// (passa do prazo da API).
+const zerar = () =>
+  (estado = {
+    ocm: 'v1',
+    google: 'ok',
+    chamadas: { ocm: 0, google_busca: 0, google_ficha: 0, google_rota: 0, google_busca_rota: 0 },
+    mascaras: {},
+    corpos: {},
+    raio_max_m: 0,
+  });
 zerar();
 
 const TABELAS = ['ocm_posto', 'atualizacao_ocm', 'posto_proprio', 'verificacao', 'google_lugar', 'google_celula', 'consulta_google', 'fonte', 'ocm_provedor', 'teto_google'];
@@ -161,7 +219,7 @@ async function tratar(req, res) {
   if (rota === 'GET /ocm/v3/poi') {
     estado.chamadas.ocm++;
     if (estado.ocm === 'fora_do_ar') return json(res, 503, { erro: 'OCM fora do ar (dublê)' });
-    const corpo = JSON.stringify(estado.ocm === 'v2' ? OCM_V2 : OCM_V1);
+    const corpo = JSON.stringify({ v2: OCM_V2, viagem: OCM_VIAGEM }[estado.ocm] ?? OCM_V1);
     if (estado.ocm === 'falha_no_meio') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.write(corpo.slice(0, corpo.length / 2));
@@ -182,6 +240,30 @@ async function tratar(req, res) {
     const perto = LUGARES.filter((l) => distanciaM({ lat: center.latitude, lng: center.longitude }, l) <= radius).slice(0, corpo.maxResultCount ?? 20);
     // Devolve também o nome, como se o Google mandasse mais do que o pedido: a API não pode guardar.
     return json(res, 200, { places: perto.map((l) => ({ id: l.id, location: { latitude: l.lat, longitude: l.lng }, displayName: { text: l.nome } })) });
+  }
+
+  // Rota do Google (Routes API, Compute Routes).
+  if (rota === 'POST /google-rotas/directions/v2:computeRoutes') {
+    estado.chamadas.google_rota++;
+    estado.mascaras.rota = req.headers['x-goog-fieldmask'];
+    estado.corpos.rota = await lerCorpo(req);
+    if (estado.google === 'fora_do_ar') return json(res, 503, { error: { code: 503, status: 'UNAVAILABLE' } });
+    if (estado.google === 'lento') await new Promise((ok) => setTimeout(ok, 3000));
+    if (estado.google === 'sem_rota') return json(res, 200, {}); // como o Google, quando não há rota entre os pontos
+    if (estado.google === 'linha_invalida') return json(res, 200, { routes: [{ distanceMeters: 1000, duration: '60s', polyline: { encodedPolyline: '~' } }] });
+    return json(res, 200, { routes: [{ distanceMeters: 211000, duration: '9300s', polyline: { encodedPolyline: LINHA_ROTA } }] });
+  }
+
+  // Busca de texto do Google (Text Search) ao longo de uma rota.
+  if (rota === 'POST /google/v1/places:searchText') {
+    estado.chamadas.google_busca_rota++;
+    estado.mascaras.busca_rota = req.headers['x-goog-fieldmask'];
+    const corpo = (estado.corpos.busca_rota = await lerCorpo(req));
+    if (['fora_do_ar', 'busca_fora_do_ar'].includes(estado.google)) return json(res, 503, { error: { code: 503, status: 'UNAVAILABLE' } });
+    if (!corpo.textQuery) return json(res, 400, { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'textQuery' } });
+    if (estado.google === 'sem_lugares_na_rota') return json(res, 200, {});
+    // Devolve também o nome, como se o Google mandasse mais do que o pedido: a API não pode guardar nem repassar.
+    return json(res, 200, { places: LUGARES_NA_ROTA.map((l) => ({ id: l.id, location: { latitude: l.lat, longitude: l.lng }, displayName: { text: l.nome } })) });
   }
 
   if (req.method === 'GET' && url.pathname.startsWith('/google/v1/places/')) {
@@ -248,7 +330,16 @@ async function tratar(req, res) {
     await destravar();
     return json(res, 200, { travada: null });
   }
-  if (rota === 'GET /__apoio/chamadas') return json(res, 200, { chamadas: estado.chamadas, mascaras: estado.mascaras, raio_max_m: estado.raio_max_m });
+  if (rota === 'GET /__apoio/chamadas')
+    return json(res, 200, { chamadas: estado.chamadas, mascaras: estado.mascaras, corpos: estado.corpos, raio_max_m: estado.raio_max_m });
+  // Um lugar do Google como está guardado no banco (ou null), para conferir que só o identificador ficou.
+  if (rota === 'GET /__apoio/google-lugar') {
+    const { rows } = await db.query(
+      `SELECT place_id, ST_Y(local::geometry) AS lat, ST_X(local::geometry) AS lng, coordenada_obtida_em FROM google_lugar WHERE place_id = $1`,
+      [url.searchParams.get('id')],
+    );
+    return json(res, 200, { lugar: rows[0] ?? null });
+  }
 
   // Simula a passagem do tempo na varredura: todas as células já consultadas passam a ter sido consultadas há N dias.
   // Uma célula vazia (a busca não trouxe lugar) consultada há N dias.

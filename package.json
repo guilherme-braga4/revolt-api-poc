@@ -10,6 +10,7 @@
     "start:teste": "tsc && node --env-file=.env.teste dist/main.js",
     "apoio": "node --env-file=.env.teste teste/apoio.mjs",
     "test": "bash scripts/testar.sh",
+    "test:unidade": "tsc && node --test teste/*.test.mjs",
     "test:app": "newman run postman/revolt-app.postman_collection.json -e postman/revolt-api-poc-local.postman_environment.json",
     "postman:sync": "node --env-file=.env scripts/postman-sync.mjs",
     "openapi": "tsc && node --env-file=.env.teste dist/main.js --openapi"

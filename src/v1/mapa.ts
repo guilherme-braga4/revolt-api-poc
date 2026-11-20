@@ -23,6 +23,23 @@ export const OCM_E_PROPRIOS_LIGADOS = `(
      AND provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado))
   OR (origem = 'verificacao_propria' AND (SELECT ligada FROM fonte WHERE nome = 'propria')))`;
 
+// Postos de OCM e próprios que podem ser entregues, no vocabulário do REVOLT, com os dados da verificação vigente por cima
+// dos da fonte (RN13 da obtenção). O mapa e o planejador de viagem leem daqui e acrescentam o seu recorte com AND.
+export const POSTOS_ENTREGUES = `
+  SELECT e.id, e.origem, e.nome, e.lat, e.lng, e.provedor, e.licenca, e.data_fonte, e.situacao, e.funcionamento, e.data_observacao,
+         v.vigente AS verificado,
+         CASE WHEN v.vigente THEN coalesce(e.conectores_observados, e.conectores) ELSE e.conectores END AS conectores,
+         CASE WHEN v.vigente THEN coalesce(e.acesso, e.acesso_fonte) ELSE e.acesso_fonte END AS acesso,
+         CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco
+  FROM eletroposto e,
+       LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v
+  WHERE e.origem <> 'google' AND ${OCM_E_PROPRIOS_LIGADOS}`;
+
+// Tipos de conector e maior potência de cada posto, a partir dos conectores de um POSTOS_ENTREGUES chamado b.
+export const TIPOS_E_POTENCIA = `
+  LATERAL (SELECT ARRAY(SELECT DISTINCT c->>'tipo' FROM jsonb_array_elements(b.conectores) c ORDER BY 1) AS tipos,
+                  (SELECT max((c->>'potencia_kw')::numeric) FROM jsonb_array_elements(b.conectores) c) AS potencia_max_kw) x`;
+
 // Lugares de origem google que podem ser entregues (RN17 e RN21 da obtenção): camada ligada, coordenada no prazo (a
 // view já corta as de mais de 30 dias), a mais de 100 m de um posto do OCM entregue e sem vínculo com um item entregue.
 export const LUGARES_GOOGLE_ENTREGAVEIS = `
@@ -34,14 +51,7 @@ export const LUGARES_GOOGLE_ENTREGAVEIS = `
 // em graus (null = sem agrupamento), $11 trazer os lugares de origem google, $12 só saber se existem.
 const SQL_MAPA = `
 WITH base AS MATERIALIZED (
-  SELECT e.id, e.origem, e.nome, e.lat, e.lng, e.provedor, e.licenca, e.data_fonte, e.situacao, e.funcionamento, e.data_observacao,
-         v.vigente AS verificado,
-         CASE WHEN v.vigente THEN coalesce(e.conectores_observados, e.conectores) ELSE e.conectores END AS conectores,
-         CASE WHEN v.vigente THEN coalesce(e.acesso, e.acesso_fonte) ELSE e.acesso_fonte END AS acesso,
-         CASE WHEN v.vigente THEN coalesce(e.preco_observado, e.preco) ELSE e.preco END AS preco
-  FROM eletroposto e,
-       LATERAL (SELECT e.verificado AND (SELECT ligada FROM fonte WHERE nome = 'propria') AS vigente) v
-  WHERE e.origem <> 'google' AND e.local::geometry && ST_MakeEnvelope($1, $2, $3, $4, 4326) AND ${OCM_E_PROPRIOS_LIGADOS}
+  ${POSTOS_ENTREGUES} AND e.local::geometry && ST_MakeEnvelope($1, $2, $3, $4, 4326)
 ),
 com_filtros AS MATERIALIZED (
   SELECT b.*, x.tipos, x.potencia_max_kw,
@@ -50,9 +60,7 @@ com_filtros AS MATERIALIZED (
          (NOT $7::boolean OR x.tipos && '{${TIPOS_RAPIDA.join(',')}}'::text[]) AS ok_rapida,
          (NOT $8::boolean OR coalesce(b.acesso = 'publico', false)) AS ok_publico,
          (NOT $9::boolean OR coalesce(b.preco ~* '${GRATUITO}', false)) AS ok_gratuito
-  FROM base b,
-       LATERAL (SELECT ARRAY(SELECT DISTINCT c->>'tipo' FROM jsonb_array_elements(b.conectores) c ORDER BY 1) AS tipos,
-                       (SELECT max((c->>'potencia_kw')::numeric) FROM jsonb_array_elements(b.conectores) c) AS potencia_max_kw) x
+  FROM base b, ${TIPOS_E_POTENCIA}
 ),
 visiveis AS (
   SELECT * FROM com_filtros WHERE ok_conector AND ok_potencia AND ok_rapida AND ok_publico AND ok_gratuito
@@ -88,7 +96,7 @@ SELECT
 
 const coordenada = (lat: number, lng: number) => ({ lat: +lat.toFixed(6), lng: +lng.toFixed(6) });
 
-const pinoDaBase = (e) => ({
+export const pinoDaBase = (e) => ({
   id: e.id,
   localizacao: coordenada(e.lat, e.lng),
   nome: e.nome,
@@ -103,7 +111,7 @@ const pinoDaBase = (e) => ({
 });
 
 // Do Google, a base só tem identificador e coordenada (RN06). O resto vem na ficha, buscada na hora.
-const pinoDoGoogle = (g) => ({
+export const pinoDoGoogle = (g) => ({
   id: g.id,
   localizacao: coordenada(g.lat, g.lng),
   nome: null,

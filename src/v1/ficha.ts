@@ -179,7 +179,7 @@ export class FichaController {
     // Dados do Google só para o app do REVOLT (RN18 da obtenção, D-09).
     if (!(await this.acesso.appAtestado(req)))
       throw new UnauthorizedException({ erro: 'atestado_invalido', mensagem: 'Pedido sem atestado do app: a ficha do Google só vai para o app do REVOLT.' });
-    if (!this.acesso.dentroDoRitmo(req))
+    if (!this.acesso.dentroDoRitmo(req, 'fichas'))
       throw new HttpException({ erro: 'ritmo_de_robo', mensagem: 'Muitas fichas do Google em pouco tempo neste aparelho. Abra o lugar no Google Maps.', link_externo: linkPublico(placeId) }, 429);
 
     try {
