@@ -10742,6 +10742,284 @@
             "header": [],
             "url": "{{base_url}}/controle/avisos"
           }
+        },
+        {
+          "name": "Preparar: lugar do Google dentro do trecho da Via Dutra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"corredorGoogle\",\n  \"lat\": -22.62445,\n  \"lng\": -44.91375,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: posto próprio novo no trecho, verificado sem preço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.collectionVariables.set('d4_proprio', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-10\",\n  \"localizacao\": {\n    \"lat\": -22.86405,\n    \"lng\": -45.23811\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 40,\n      \"quantidade\": 1\n    }\n  ],\n  \"funcionamento\": \"funcionando\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor: cada posto com o estado certo, sem lugar do Google (D4, UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // dia em Brasília (UTC-3)",
+                  "const dias = (d) => Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5);",
+                  "",
+                  "const r = pm.response.json();",
+                  "const proprio = pm.collectionVariables.get('d4_proprio');",
+                  "const p = Object.fromEntries(r.postos.map((x) => [x.id, x]));",
+                  "pm.collectionVariables.set('d4_ocm_em', r.ocm_atualizado_em);",
+                  "pm.test('Os 7 postos do OCM no trecho e o próprio novo; nenhum lugar do Google (RN18)', () => {",
+                  "  pm.expect(Object.keys(p).sort()).to.eql(['ocm-9101', 'ocm-9102', 'ocm-9104', 'ocm-9105', 'ocm-9107', 'ocm-9108', 'ocm-9109', proprio].sort());",
+                  "  pm.expect(JSON.stringify(r)).to.not.include('google');",
+                  "});",
+                  "pm.test('Verificado com preço e regras', () => pm.expect(p['ocm-9101']).to.include({ verificado: true, ultima_verificacao: '2026-11-18', tem_preco: true, tem_regras_cobranca: true }));",
+                  "pm.test('Verificado sem preço', () => pm.expect(p[proprio]).to.include({ verificado: true, ultima_verificacao: '2026-11-10', tem_preco: false, tem_regras_cobranca: false }));",
+                  "pm.test('Não verificado (RN13)', () => pm.expect(p['ocm-9102']).to.include({ verificado: false, ultima_verificacao: null, tem_preco: false }));",
+                  "pm.test('Indicadores batem com a contagem manual do trecho', () => {",
+                  "  const verificados = r.postos.filter((x) => x.verificado);",
+                  "  const completos = r.postos.filter((x) => x.tem_preco && x.tem_regras_cobranca);",
+                  "  const idades = verificados.map((x) => dias(x.ultima_verificacao)).sort((a, b) => a - b);",
+                  "  pm.expect(r.indicadores).to.eql({",
+                  "    postos: 8, verificados: 2, parcela_verificados: 0.25, com_preco_e_regras: 1, parcela_com_preco_e_regras: 0.125,",
+                  "    idade_mediana_ultima_verificacao_dias: (dias('2026-11-18') + dias('2026-11-10')) / 2,",
+                  "  });",
+                  "  pm.expect([verificados.length / r.postos.length, completos.length / r.postos.length, (idades[0] + idades[1]) / 2])",
+                  "    .to.eql([r.indicadores.parcela_verificados, r.indicadores.parcela_com_preco_e_regras, r.indicadores.idade_mediana_ultima_verificacao_dias]);",
+                  "});",
+                  "pm.test('Data dos dados usados: OCM e verificação mais recente', () => {",
+                  "  pm.expect(new Date(r.ocm_atualizado_em).getTime()).to.be.above(Date.now() - 600000);",
+                  "  pm.expect(r.ultima_verificacao).to.eql('2026-11-18');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo fora_do_ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"fora_do_ar\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OCM fora do ar: a atualização falha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Com a cópia do OCM desatualizada por falha, a situação traz a data da última atualização que deu certo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Mesma data de antes da falha e os mesmos 8 postos', () => {",
+                  "  pm.expect(r.ocm_atualizado_em).to.eql(pm.collectionVariables.get('d4_ocm_em'));",
+                  "  pm.expect(r.indicadores.postos).to.eql(8);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor é só do Curador [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: token de conta de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_motorista_d4', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-d4\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor recusada a motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_motorista_d4}}"
+              }
+            ],
+            "url": "{{base_url}}/corredor"
+          }
         }
       ]
     }
@@ -10773,11 +11051,11 @@
           "    );",
           "}",
           "",
-          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle) exigem a conta do Curador: todo pedido",
+          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle, /corredor) exigem a conta do Curador: todo pedido",
           "// leva o token de conta do dublê do login com o identificador de CURADOR_CONTAS, menos os marcados com \"[sem conta]\" no nome",
           "// e os que já trazem o seu próprio Authorization (testes de conta sem papel de Curador).",
           "const urlDoPedido = pm.variables.replaceIn(pm.request.url.toString());",
-          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle)(\\/|$)/.test(pm.request.url.getPath())",
+          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle|corredor)(\\/|$)/.test(pm.request.url.getPath())",
           "    && !pm.info.requestName.includes('[sem conta]') && !pm.request.headers.has('Authorization')) {",
           "  const usarConta = (token) => pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
           "  const guardada = pm.collectionVariables.get('conta_curador');",
