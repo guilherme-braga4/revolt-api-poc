@@ -172,7 +172,7 @@ zerar();
 
 const TABELAS = ['ocm_posto', 'atualizacao_ocm', 'posto_proprio', 'verificacao', 'google_lugar', 'google_celula', 'consulta_google', 'fonte', 'ocm_provedor', 'teto_google',
   'conta', 'observacao', 'observacao_recusada', 'foto', 'contribuicao', 'reporte', 'reporte_envio',
-  'decisao', 'vinculo_duplicado'];
+  'decisao', 'vinculo_duplicado', 'viagem'];
 
 async function lerCorpo(req) {
   let texto = '';

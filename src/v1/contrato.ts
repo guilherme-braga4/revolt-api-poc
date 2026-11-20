@@ -323,6 +323,19 @@ export class PedidoPlanejarViagem {
   autonomia_km: number;
 }
 
+// Viagem salva com conta (UC04, RF06, RN21): só o que o motorista informou, nada do Google (nem rota, nem paradas, nem lugares).
+export class PedidoViagemSalva extends PedidoPlanejarViagem {
+  @ApiProperty({ example: 'São José dos Campos a Resende', minLength: 1, maxLength: 100 })
+  @IsString() @Matches(/\S/, { message: 'nome não pode ser vazio' }) @MaxLength(100)
+  nome: string;
+}
+
+export class ViagemSalva extends PedidoViagemSalva {
+  @ApiProperty({ type: 'integer' }) id: number;
+  @ApiProperty({ format: 'date-time' }) criada_em: string;
+  @ApiProperty({ format: 'date-time' }) atualizada_em: string;
+}
+
 export class RotaGoogle {
   @ApiProperty({
     description: 'Linha da rota no formato codificado do Google (Encoded Polyline), só para desenhar sobre o mapa do Google. Não é guardada.',

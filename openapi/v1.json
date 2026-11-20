@@ -775,6 +775,237 @@
           "curador"
         ]
       }
+    },
+    "/v1/viagens": {
+      "get": {
+        "description": "Das alteradas mais recentemente. Para planejar de novo, o app manda os mesmos dados ao planejar.",
+        "operationId": "ViagensSalvasController_listar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ViagemSalva"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Viagens salvas da conta",
+        "tags": [
+          "viagens"
+        ]
+      },
+      "post": {
+        "description": "Guarda só nome, origem, destino, conectores e autonomia. Viagem não salva não deixa registro (RN21).",
+        "operationId": "ViagensSalvasController_salvar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoViagemSalva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViagemSalva"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Salvar uma viagem",
+        "tags": [
+          "viagens"
+        ]
+      }
+    },
+    "/v1/viagens/{id}": {
+      "put": {
+        "description": "Troca todos os dados da viagem.",
+        "operationId": "ViagensSalvasController_editar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoViagemSalva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViagemSalva"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Viagem inexistente ou de outra conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar uma viagem salva",
+        "tags": [
+          "viagens"
+        ]
+      },
+      "delete": {
+        "operationId": "ViagensSalvasController_apagar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Viagem apagada."
+          },
+          "400": {
+            "description": "Identificador que não é número.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sem conta (erro conta_necessaria).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Viagem inexistente ou de outra conta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apagar uma viagem salva",
+        "tags": [
+          "viagens"
+        ]
+      }
     }
   },
   "info": {
@@ -3040,6 +3271,152 @@
           "tipo",
           "alvo",
           "decidida_em"
+        ]
+      },
+      "ViagemSalva": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "description": "Origem da viagem (WGS 84).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "destino": {
+            "description": "Destino da viagem (WGS 84).",
+            "example": {
+              "lat": -22.52,
+              "lng": -44.1
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "conectores": {
+            "type": "array",
+            "description": "Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.",
+            "example": [
+              "CCS2",
+              "TIPO_2"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "CCS2",
+                "CCS1",
+                "TIPO_2",
+                "TIPO_1",
+                "CHADEMO",
+                "GBT",
+                "TESLA",
+                "TOMADA"
+              ]
+            }
+          },
+          "autonomia_km": {
+            "type": "number",
+            "description": "Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.",
+            "minimum": 10,
+            "maximum": 2000,
+            "example": 250
+          },
+          "nome": {
+            "type": "string",
+            "example": "São José dos Campos a Resende",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "id": {
+            "type": "integer"
+          },
+          "criada_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "atualizada_em": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "origem",
+          "destino",
+          "conectores",
+          "autonomia_km",
+          "nome",
+          "id",
+          "criada_em",
+          "atualizada_em"
+        ]
+      },
+      "PedidoViagemSalva": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "description": "Origem da viagem (WGS 84).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "destino": {
+            "description": "Destino da viagem (WGS 84).",
+            "example": {
+              "lat": -22.52,
+              "lng": -44.1
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Ponto"
+              }
+            ]
+          },
+          "conectores": {
+            "type": "array",
+            "description": "Conectores que o carro aceita. Só posto com pelo menos um deles vira parada ou plano B.",
+            "example": [
+              "CCS2",
+              "TIPO_2"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "CCS2",
+                "CCS1",
+                "TIPO_2",
+                "TIPO_1",
+                "CHADEMO",
+                "GBT",
+                "TESLA",
+                "TOMADA"
+              ]
+            }
+          },
+          "autonomia_km": {
+            "type": "number",
+            "description": "Quantos km o carro anda com a carga de saída e com cada recarga. O planejador não guarda reserva: mande já descontada a margem que o motorista quer.",
+            "minimum": 10,
+            "maximum": 2000,
+            "example": 250
+          },
+          "nome": {
+            "type": "string",
+            "example": "São José dos Campos a Resende",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "origem",
+          "destino",
+          "conectores",
+          "autonomia_km",
+          "nome"
         ]
       }
     }

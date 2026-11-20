@@ -105,7 +105,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens/planejar']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -9051,6 +9051,714 @@
               }
             ],
             "url": "{{base_url}}/v1/reportes/meus"
+          }
+        },
+        {
+          "name": "Preparar: token de conta da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_c', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-c\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Listar viagens salvas sem conta é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Convite para entrar', () => pm.expect(pm.response.json().erro).to.eql('conta_necessaria'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "[sem conta] Salvar viagem sem conta é recusado: sem conta, a viagem fica só no aparelho",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Planejar sem salvar, mesmo com a conta no pedido (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Viagem planejada', () => pm.expect(pm.response.json().disponivel).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "X-Aparelho",
+                "value": "secao-12-rn21"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.18765,\n    \"lng\": -45.87654\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Nenhuma tabela guarda a origem da viagem só planejada (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada', () => pm.expect(pm.response.json().total).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/procurar?texto=-23.18765"
+          }
+        },
+        {
+          "name": "Viagem só planejada não aparece nas viagens salvas (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "Salvar a viagem com conta (UC04)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const v = pm.response.json();",
+                  "pm.collectionVariables.set('viagem_c1', v.id);",
+                  "pm.test('Só o que o motorista informou', () =>",
+                  "  pm.expect(Object.keys(v).sort()).to.eql(['atualizada_em', 'autonomia_km', 'conectores', 'criada_em', 'destino', 'id', 'nome', 'origem']));",
+                  "pm.test('Os mesmos dados', () => {",
+                  "  pm.expect(v).to.include({ nome: 'São José dos Campos a Resende', autonomia_km: 100 });",
+                  "  pm.expect([v.origem, v.destino, v.conectores]).to.eql([{ lat: -23.19, lng: -45.88 }, { lat: -22.52, lng: -44.1 }, ['CCS2']]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com paradas ou rota do Google é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100,\n  \"paradas\": [\n    {\n      \"eletroposto_id\": \"ocm-9108\"\n    }\n  ],\n  \"linha\": \"_p~iF~ps|U\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem sem nome é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com nome em branco é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"   \",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Viagem com conector desconhecido é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"DESCONHECIDO\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Em outro aparelho, a motorista C vê a viagem salva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const l = pm.response.json();",
+                  "pm.test('A viagem salva', () => pm.expect(l.map((v) => [v.id, v.nome])).to.eql([[Number(pm.collectionVariables.get('viagem_c1')), 'São José dos Campos a Resende']]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "X-Aparelho",
+                "value": "outro-aparelho"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "O motorista B não vê a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "O motorista B não edita a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "O motorista B não apaga a viagem da motorista C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_b}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Editar a viagem salva (RF06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const v = pm.response.json();",
+                  "pm.test('Dados novos', () => pm.expect(v).to.include({ nome: 'SJC a Resende, com folga', autonomia_km: 80 }));",
+                  "pm.test('Data da alteração depois da criação', () => pm.expect(new Date(v.atualizada_em) > new Date(v.criada_em)).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"SJC a Resende, com folga\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 80\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar com dados inválidos é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "A tabela de viagens guarda só a conta, nome, origem, destino, conectores, autonomia e datas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const t = pm.response.json();",
+                  "pm.test('Uma viagem', () => pm.expect(t.length).to.eql(1));",
+                  "pm.test('Só essas colunas', () =>",
+                  "  pm.expect(Object.keys(t[0]).sort()).to.eql(['atualizada_em', 'autonomia_km', 'conectores', 'conta_id', 'criada_em', 'destino', 'id', 'nome', 'origem']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/viagem"
+          }
+        },
+        {
+          "name": "Apagar a viagem salva (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Depois de apagada, a lista fica vazia",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens"
+          }
+        },
+        {
+          "name": "Apagar de novo: 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/{{viagem_c1}}"
+          }
+        },
+        {
+          "name": "Identificador que não é número: 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/abc"
+          }
+        },
+        {
+          "name": "Salvar outra viagem antes de excluir a conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"São José dos Campos a Resende\",\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "A motorista C exclui a conta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_c}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/conta"
+          }
+        },
+        {
+          "name": "As viagens salvas somem com a conta (UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nenhuma viagem', () => pm.expect(pm.response.json()).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/viagem"
           }
         }
       ]

@@ -369,6 +369,20 @@ CREATE TABLE IF NOT EXISTS reporte_envio (
 
 -- Decisões do Curador na moderação (UC08 e RF11 do app): cada uma com data, motivo e alvo. Na correção, dados guarda os
 -- valores originais; a observação passa a ter os corrigidos.
+-- Viagens salvas com conta (UC04, RF06, RN21): só nome, origem, destino, conectores e autonomia. Somem com a conta.
+CREATE TABLE IF NOT EXISTS viagem (
+  id serial PRIMARY KEY,
+  conta_id int NOT NULL REFERENCES conta ON DELETE CASCADE,
+  nome text NOT NULL,
+  origem jsonb NOT NULL,
+  destino jsonb NOT NULL,
+  conectores text[] NOT NULL,
+  autonomia_km numeric NOT NULL,
+  criada_em timestamptz NOT NULL DEFAULT now(),
+  atualizada_em timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS viagem_conta ON viagem (conta_id);
+
 CREATE TABLE IF NOT EXISTS decisao (
   id serial PRIMARY KEY,
   tipo text NOT NULL,

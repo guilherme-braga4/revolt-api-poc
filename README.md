@@ -128,6 +128,13 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - SKUs: a rota pede só distância, duração e linha, sem trânsito, sem paradas intermediárias e sem modificador de local, e fica no **Compute Routes Essentials** (10 mil grátis por mês, depois US$ 5 por mil). A busca pede só `places.id,places.location` e fica no **Text Search Pro** (5 mil grátis, depois US$ 32 por mil): só identificadores seria grátis, mas o mapa precisa da coordenada. Uma página de até 20 lugares por pedido. Cada consulta é conferida no teto antes de sair, primeiro a rota e depois a busca.
 - Volume real: numa cópia do banco com os 2.416 postos do OCM, a consulta dos postos ao longo de rotas sintéticas de 400 a 1.000 km leva de 30 a 80 ms, e a escolha das paradas, menos de 3 ms.
 
+**Viagens salvas (`GET`, `POST`, `PUT` e `DELETE /v1/viagens`, com conta)**
+
+- Corpo de `POST` e `PUT /v1/viagens/:id`: o mesmo do planejar mais `nome` (até 100 caracteres). A API guarda só nome, origem, destino, conectores e autonomia: nada do Google, nem rota, nem paradas (RN21 e termos do Google). Campo a mais: 400.
+- `GET` lista as viagens da conta, das alteradas mais recentemente. Para abrir uma viagem, o app manda os mesmos dados ao planejar de novo.
+- Viagem de outra conta ou inexistente: 404. As viagens somem com a exclusão da conta. Sem conta, a viagem fica só no aparelho (UC04).
+- Planejar não guarda nada ligado à pessoa, mesmo com a conta no pedido (RN21).
+
 **Check-in (`POST /v1/checkins`, com conta)**
 
 - Corpo: `{ "chave", "eletroposto_id", "data_observacao", "carregou", "conector"?, "funcionou"?, "potencia_kw"?, "preco"?, "estava_como_informado": "sim" | "nao", "foto"? }`. A `chave` é um UUID gerado pelo app para cada check-in: reenviar a mesma chave (fila sem conexão) devolve 200 com a contribuição que já existe, sem duplicar. Check-in novo: 201.
@@ -318,11 +325,12 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 
 - **Token do Curador:** as rotas do Curador e da operação aceitam só o token do login gerenciado de uma conta em `CURADOR_CONTAS`. Enquanto o login do app (D-04) não existe, só o dublê da coleção emite esse token. Para o Curador real usar essas rotas, falta definir como ele obtém um token do Firebase (entrar pelo app e copiar o token, ou uma tela própria). Até lá, a escolha mais simples e reversível: a API não abre outro caminho de acesso, e as rotas ficam fechadas para quem não tem esse token.
 - **Exclusão no provedor de login:** a arquitetura pede que a API apague também a conta no Firebase. Isso exige o Admin SDK com uma credencial de serviço, que não existe aqui. Escolha mais simples e reversível: a API apaga os dados dela, e o app apaga o usuário no Firebase logo depois, com o próprio SDK do cliente.
+- **Paradas na viagem salva:** a viagem salva com conta guarda só origem, destino, conectores, autonomia e nome. As paradas que o motorista trocou ou removeu ficam só no aparelho; em outro aparelho, o app planeja de novo e pode sugerir outras paradas.
 - **Conta bloqueada que se exclui:** ao entrar de novo, a conta nova não está bloqueada. Impedir isso exigiria guardar o identificador do login depois da exclusão, o que contraria o RF10. Fica assim até decisão contrária.
 
 ## Fora desta fase
 
-- Viagens salvas com conta (`GET/POST/PUT/DELETE /v1/viagens`, Fase 2), check-in, reportes e moderação (Fase 3), indicadores (Fase 4) e publicação da API.
+- Indicadores (Fase 4), as Alterações 2, 4 e 5 do PRD de obtenção e a publicação da API.
 - Planejador: a telemetria do UC04 (viagens planejadas, trechos sem cobertura e paradas sem plano B); o acesso restrito, que hoje não impede um posto de virar parada; e mais de 9 paradas no link do Google Maps.
 - Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
 - Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).
