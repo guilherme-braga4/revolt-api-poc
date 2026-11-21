@@ -313,7 +313,12 @@ async function tratar(req, res) {
   // Abertura do app de N dias atrás, mais antiga do que POST /v1/eventos aceita, para testar a limpeza dos 90 dias.
   if (rota === 'POST /__apoio/abertura-antiga') {
     const { id_rotativo, dias } = await lerCorpo(req);
-    await db.query('INSERT INTO abertura (id_rotativo, dia) VALUES ($1, current_date - $2::int) ON CONFLICT DO NOTHING', [id_rotativo, dias]);
+    // Dias contados a partir de hoje em Brasília, como a API conta. O current_date do banco é UTC: das 21h à meia-noite
+    // ele já está no dia seguinte, e o dia "de 91 dias atrás" teria só 90 para a API.
+    await db.query(
+      `INSERT INTO abertura (id_rotativo, dia) VALUES ($1, (now() AT TIME ZONE 'America/Sao_Paulo')::date - $2::int) ON CONFLICT DO NOTHING`,
+      [id_rotativo, dias],
+    );
     return json(res, 200, { ok: true });
   }
   if (rota === 'POST /__apoio/ocm') {
