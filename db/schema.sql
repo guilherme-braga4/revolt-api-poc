@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS verificacao (
   pagamento_sem_app boolean,
   acesso text
 );
+-- Fase 4 (Alteração 2): cada carregador observado ({ tipo, funcionou, potencia_observada_kw }, com null quando não houve
+-- recarga) e o tipo de restrição do acesso restrito (RF07).
+ALTER TABLE verificacao ADD COLUMN IF NOT EXISTS carregadores jsonb;
+ALTER TABLE verificacao ADD COLUMN IF NOT EXISTS acesso_restricao text;
 
 -- Do Google só o identificador (sem prazo) e a coordenada com data (até 30 dias) (RN06, RN07).
 CREATE TABLE IF NOT EXISTS google_lugar (
@@ -117,6 +121,17 @@ CREATE TABLE IF NOT EXISTS teto_google (
 INSERT INTO teto_google (id, valor_usd, alterado_por)
 VALUES (1, 50, 'Curador, decisão de 12/11/2026')
 ON CONFLICT DO NOTHING;
+
+-- Fase 4 (Alteração 4): toda mudança de teto, fonte ou provedor do OCM, com data e autor (UC06).
+-- alvo: 'teto', 'fonte:<nome>' ou 'provedor_ocm:<id>'; de e para em texto ('50' -> '80', 'ligada' -> 'desligada').
+CREATE TABLE IF NOT EXISTS historico_controle (
+  id serial PRIMARY KEY,
+  alvo text NOT NULL,
+  de text,
+  para text NOT NULL,
+  autor text NOT NULL,
+  feita_em timestamptz NOT NULL DEFAULT now()
+);
 
 -- Corredores verificados pelo Curador (RN05 do app): fora deles, o mapa avisa que a área não foi verificada.
 -- Semente: a Via Dutra do Discovery, 85 pontos a cada 4 km, sem os 30 km urbanos de cada ponta, com 3 km de cada lado.
@@ -213,7 +228,9 @@ SELECT 'ocm-' || o.ocm_id AS id,
        NULL::boolean AS duplicado_do_ocm,
        CASE WHEN o.dados->'UsageType'->>'Title' ILIKE 'public%' THEN 'publico'
             WHEN o.dados->'UsageType'->>'Title' ILIKE 'priv%' THEN 'restrito'
-       END AS acesso_fonte -- tipo de uso informado pelo OCM, no vocabulário do REVOLT
+       END AS acesso_fonte, -- tipo de uso informado pelo OCM, no vocabulário do REVOLT
+       u.carregadores AS carregadores_observados,
+       u.acesso_restricao
 FROM ocm_posto o
 LEFT JOIN ultima u ON u.ocm_id = o.ocm_id
 UNION ALL
@@ -254,7 +271,9 @@ SELECT 'propria-' || u.posto_proprio_id,
        u.ocm_id,
        u.local,
        NULL,
-       NULL
+       NULL,
+       u.carregadores,
+       u.acesso_restricao
 FROM ultima u
 WHERE u.ocm_id IS NULL OR NOT EXISTS (SELECT 1 FROM ocm_posto o WHERE o.ocm_id = u.ocm_id)
 UNION ALL
@@ -280,6 +299,8 @@ SELECT 'google-' || g.place_id,
        EXISTS (SELECT 1 FROM ocm_posto o
                WHERE ST_DWithin(o.local, g.local, 100) AND (SELECT ligada FROM fonte WHERE nome = 'ocm')
                  AND o.provedor_id NOT IN (SELECT provedor_id FROM ocm_provedor WHERE NOT ligado)),
+       NULL,
+       NULL,
        NULL
 FROM google_lugar g
 WHERE g.coordenada_obtida_em >= now() - interval '30 days';
@@ -401,3 +422,21 @@ CREATE TABLE IF NOT EXISTS vinculo_duplicado (
   decisao_id integer NOT NULL REFERENCES decisao (id),
   criado_em timestamptz NOT NULL DEFAULT now()
 );
+
+-- Fase 4 (D-10): telemetria própria do app, sem pessoa. Só a contagem por dia e tipo; nada identifica o aparelho.
+CREATE TABLE IF NOT EXISTS evento_dia (
+  dia date NOT NULL,
+  tipo text NOT NULL,
+  quantidade integer NOT NULL,
+  trechos_sem_cobertura integer NOT NULL DEFAULT 0, -- soma, nas viagens planejadas
+  paradas_sem_plano_b integer NOT NULL DEFAULT 0,   -- soma, nas viagens planejadas
+  PRIMARY KEY (dia, tipo)
+);
+-- Dias de uso de cada identificador aleatório que o app sorteia e troca a cada 30 dias, só para o retorno em 30 dias
+-- (RF15 do app). Evento bruto: apagado depois de 90 dias (RNF-09).
+CREATE TABLE IF NOT EXISTS abertura (
+  id_rotativo uuid NOT NULL,
+  dia date NOT NULL,
+  PRIMARY KEY (id_rotativo, dia)
+);
+CREATE INDEX IF NOT EXISTS abertura_dia ON abertura (dia);

@@ -67,6 +67,8 @@ O app usa só os caminhos sob `/v1`, em JSON e no vocabulário do REVOLT. Nenhum
 | `GET /v1/eletropostos/:id` | Ficha de um posto. Com `google-…`, a ficha vem do Google na hora, é traduzida e não é gravada. | Atestado do app para a ficha do Google |
 | `POST /v1/viagens/planejar` | Planeja uma viagem: paradas e plano B entre os postos do OCM e próprios, trechos sem cobertura e os lugares do Google ao longo da mesma rota do Google. | Atestado do app |
 | `GET /v1/conta` | Confere o token da conta e devolve o identificador. Base das rotas com conta das fases 2 e 3. | Conta |
+| `GET /v1/curador/indicadores?de=&ate=` | Indicadores do app para o Curador (Fase 4), só agregados. | Conta de Curador |
+| `POST /v1/eventos` | Telemetria própria do app (Fase 4, D-10), sem pessoa. | Nenhuma (ritmo por IP) |
 
 **Mapa (`GET /v1/mapa`)**
 
@@ -162,6 +164,27 @@ Todo pino traz `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso`:
 - **Duplicado confirmado:** os dois registros continuam na base, sem fusão. Um vínculo marca o outro posto como oculto, e o mapa e o planejador deixam de mostrá-lo. Vale para OCM×OCM, próprio×OCM e lugar do Google.
 - Alvo inexistente ou já decidido (contribuição removida, reporte resolvido, conta já bloqueada): 404. Sem conta: 401. Conta sem papel de Curador: 403 `papel_curador_necessario`.
 
+**Indicadores (`GET /v1/curador/indicadores`, conta de Curador, Fase 4)**
+
+- Período por `?de=AAAA-MM-DD&ate=AAAA-MM-DD`, em dias de Brasília. Padrão: os últimos 30 dias, até hoje. `de` depois de `ate` ou data malformada: 400.
+- `como_informado`, o indicador principal (RF15): das chegadas do período (check-ins não removidos pelo Curador), quantas tiveram a resposta "estava como o app informou" e a parcela.
+- `checkins_por_semana_no_corredor`: check-ins por semana, de segunda a domingo, em postos do OCM e próprios dentro do corredor da Via Dutra. Só as semanas com algum check-in aparecem. Check-in em lugar do Google não entra, porque a posição do Google não pode ser usada em conta do REVOLT.
+- `retorno_30_dias`: motoristas que voltam em 30 dias, pelo identificador rotativo dos eventos `app_aberto`. Dos identificadores com a primeira abertura nos 30 dias que terminam 30 dias antes de `ate` (`primeira_abertura`), quantos abriram o app de novo em outro dia, em até 30 dias. A janela fica 30 dias para trás para todos terem tido 30 dias para voltar.
+- `uso_do_app`: as contagens da telemetria no período, por tipo, e as somas de trechos sem cobertura e de paradas sem plano B.
+- **RN21:** as contas agregam no banco, e nenhum autor, conta ou identificador sai da consulta. Grupo com menos de 5 motoristas distintos (`minimo_motoristas_por_grupo`) sai com os números em `null` e `suprimido: true`. As contagens de `uso_do_app` não passam por isso, porque nenhum evento tem pessoa ou aparelho.
+- Cada indicador traz `dados_ate`, o dia mais recente dos dados usados; a resposta traz `calculado_em`.
+
+**Telemetria (`POST /v1/eventos`, sem conta e sem atestado, Fase 4)**
+
+- Corpo: `{ "eventos": [ { "tipo", "dia", ... } ] }`, de 1 a 100 eventos. `dia` é o dia do evento em Brasília, de hoje até 30 dias atrás: o app junta os eventos e manda depois o que ficou sem conexão. Resposta: 204.
+- Tipos (lista fechada):
+  - `app_aberto`, com `id_rotativo`: um UUID v4 aleatório que o app sorteia e troca 30 dias depois de sorteado. O app manda um por dia;
+  - `uso_sem_conexao` e `legenda_aberta` (Alteração 4 do app);
+  - `viagem_planejada`, com `trechos_sem_cobertura` e `paradas_sem_plano_b` (0 a 50); `viagem_salva`; `viagem_aberta_na_navegacao` (UC04).
+- Recusado com 400 (o app não deve repetir): tipo fora da lista, campo a mais (uma posição, por exemplo), `id_rotativo` fora de `app_aberto` ou ausente nele, contagens fora de `viagem_planejada` ou ausentes nela, dia no futuro ou de mais de 30 dias atrás. Um evento inválido recusa o envio inteiro.
+- A API guarda só a contagem por dia e tipo. Os dias de uso de cada `id_rotativo` ficam à parte, só para o retorno em 30 dias, e são apagados com 90 dias (RNF-09) a cada envio.
+- Ritmo: `LIMITE_EVENTOS` envios por IP a cada 10 minutos (padrão 120); acima disso, 429 `muitos_pedidos`. Por IP e não por `X-Aparelho`, porque a telemetria não leva identificador estável do aparelho.
+
 Todo erro da `/v1` sai como `{ "erro", "mensagem" }`.
 
 **Base de dados fora do ar ou lenta:** o mapa e a ficha respondem 503 com `erro: "base_indisponivel"`, nunca ficam pendurados. A ficha do Google ainda traz `link_externo`. Cada etapa de acesso ao banco tem prazo (`BANCO_TEMPO_LIMITE_MS`, padrão 5 s): conseguir uma conexão e executar a consulta. O Postgres cancela a consulta que passa do prazo, a conexão que não responde sai do pool, e a que cai parada é descartada sem derrubar o processo. Depois de uma queda, o pedido seguinte abre conexão nova, sem reiniciar a API. Se o servidor encerra a conexão antes de responder (reinício do Postgres), a consulta é repetida até 2 vezes numa conexão nova, porque não chegou a ser aplicada. As tarefas que processam a base inteira (atualização do OCM, grade e expiração do Google, exclusão de dados de uma fonte) usam outro pool, com prazo de 10 minutos: a atualização do OCM com o volume real leva de 1,6 s a 3 s, e chega a 9 s no teto de 10 mil postos da consulta ao OCM.
@@ -189,6 +212,8 @@ A API não guarda senha. Ela só valida tokens assinados (RS256), conferindo a c
 | `LIMITE_ROTAS_GOOGLE` | `20` |
 
 Com `ATESTADO_JWKS_URL` vazio, o atestado fica desligado e a API avisa no log. Serve só para desenvolvimento local. Com `CONTA_JWKS_URL` vazio, nenhuma conta é aceita.
+
+**Contas no desenvolvimento local:** `node scripts/login-dev.mjs` sobe um dublê do login em `http://localhost:4039` (só aceita conexões da própria máquina). Ele publica a chave em `/jwks.json` e emite tokens de 12 h em `/token?sub=<identificador>`. Suba a API com `CONTA_JWKS_URL=http://localhost:4039/jwks.json`, `CONTA_EMISSOR=revolt-login-dev`, `CONTA_PUBLICO=revolt-app-dev` e, para ter um Curador, `CURADOR_CONTAS=curador-dev`. A chave muda a cada vez que o dublê sobe.
 
 ### Testar a API do app
 
@@ -247,12 +272,15 @@ Estes endpoints não são para o app. Desde a Fase 3, todos exigem a conta com p
 | `GET /ocm/atualizacoes` | Últimas atualizações, com contagens e motivo das falhas. | RF02 |
 | `POST /google/varredura` | Seed e atualização dos lugares do Google por células. Corpo opcional: `{ "limite": n }`. | RF04, RF06 |
 | `POST /google/expirar` | Apaga coordenadas do Google com mais de 30 dias. Também roda todo dia às 4h. | RF06 |
-| `POST /verificacoes` | Registra uma verificação em campo: de um posto do OCM (`ocm_id`), de um registro próprio (`posto_proprio_id`) ou de um posto novo. | RF07 |
+| `POST /verificacoes` | Registra uma verificação em campo: de um posto do OCM (`ocm_id`), de um registro próprio (`posto_proprio_id`) ou de um posto novo. Desde a Fase 4, com cada carregador (`carregadores`: `tipo`, `funcionou` e `potencia_observada_kw`, `null` quando não houve recarga) e, no acesso restrito, o tipo de restrição (`acesso_restricao`: `marca_de_veiculo`, `clientes_ou_hospedes`, `moradores` ou `horario`). | RF07 |
 | `GET /postos-proprios/:id` | Registro próprio com o histórico de verificações. | RF07 |
 | `POST /postos-proprios/:id/vinculo-google` | Guarda o `place_id` no registro próprio quando o Curador confirma que é o mesmo posto. | RF08 |
 | `GET /controle/gasto` · `PUT /controle/teto` | Gasto do mês por tipo de consulta e teto do Google. | RF09 |
 | `GET /controle/fontes` · `PATCH /controle/fontes/:nome` · `PATCH /controle/provedores-ocm/:id` | Liga e desliga as fontes `ocm`, `google` e `propria` e cada provedor do OCM. | RF10 |
 | `POST /controle/fontes/:nome/excluir-dados` · `POST /controle/provedores-ocm/:id/excluir-dados` | Desliga e apaga os dados da fonte ou do provedor. Registros próprios continuam. | RF10 |
+| `GET /controle/avisos` | Avisos ao Curador, calculados na hora (Fase 4): `teto_atingido`, `teto_proximo` (80% do teto ou mais), `gasto_nao_apurado`, `fonte_desligada`, `provedor_ocm_desligado` e `atualizacao_ocm_falhou`, cada um com `mensagem` e `desde`. Sem e-mail nem push. | RF09, UC06 |
+| `GET /controle/historico` | Toda mudança de teto, fonte e provedor e toda exclusão de dados, com `alvo`, `de`, `para`, `autor` e `feita_em`, da mais recente para a mais antiga (Fase 4). | UC06 |
+| `GET /corredor` | Situação do corredor da Via Dutra (Fase 4): postos do OCM e próprios do trecho, cada um com `verificado`, `ultima_verificacao`, `tem_preco` e `tem_regras_cobranca`, e os indicadores (parcela verificada, idade mediana da última verificação e parcela com preço e regras), com `ocm_atualizado_em` (última atualização do OCM que deu certo) e `ultima_verificacao`. Nenhum lugar do Google. | RF11, UC07 |
 
 Exemplos de corpo estão na coleção do Postman.
 
@@ -275,6 +303,10 @@ A seção 11, no fim porque zera a base, cobre o planejador de viagem com postos
 - sem atestado, pedidos inválidos e ritmo de robô.
 
 Toda viagem planejada também passa pelas regras RN10 e RN11 conferidas na resposta. A seção confere ainda o corpo e a máscara de campos que chegam ao dublê, para a rota e a busca não subirem de SKU. As regras do planejador também têm testes unitários (`teste/planejador.test.mjs`, com `npm run test:unidade`), que o `npm test` roda antes da coleção.
+
+A seção 13 cobre a Fase 4: o prazo da busca no OCM (um dublê que responde depois do prazo), a verificação com cada carregador e o tipo de restrição e as recusas, cada aviso ao Curador e o histórico do controle, a situação do corredor no trecho de teste do UC07, os indicadores contra uma contagem manual (seis motoristas, nove check-ins, uma remoção pelo Curador e a supressão de grupos pequenos) e a telemetria (cada tipo, as recusas, o retorno em 30 dias, a limpeza dos 90 dias e o ritmo por IP). Os indicadores e o corredor também têm testes unitários (`teste/indicadores.test.mjs`), inclusive os de RN13, RN18 e RN21.
+
+A seção 14 fecha as lacunas da auditoria de aceite (Wave E): a varredura pedida sem conta ou por motorista não começa (RN21), o mapa com as três origens e filtro de conector (Alteração 1 do app) e o lugar do Google vinculado a um posto próprio, que sai do mapa mas continua na rota (Alteração 7 da obtenção). Ela começa zerando o banco. As regras da obtenção também têm testes unitários: `teste/obtencao.test.mjs` (RN01, RN03, RN04, RN05, RN10, RN13 e RN19) e `teste/google.test.mjs` (RN15 e RN21, com banco e Google falsos).
 
 Toda resposta da `/v1` passa por um script da coleção que a compara com a especificação OpenAPI servida pela API: campo a mais, campo a menos ou tipo errado reprova. Todo pino e toda ficha também precisam trazer `origem`, `verificacao`, `atualizado_em` e `condicoes_de_uso` (RNF-01).
 
@@ -303,7 +335,7 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 - **Google por varredura:** previsto no PRD de obtenção a partir da versão 0.5 (Alteração 3).
 - **Duplicados:** lugar do Google a menos de 100 m de um posto do OCM entregue não sai no mapa (RN17). Com o provedor ou a fonte desse posto desligados, o lugar volta. A distância é provisória e pode juntar postos vizinhos de redes diferentes.
 - **Filtro de gratuito:** heurística sobre o texto do preço ("grátis", "gratuito", "free", "sem custo", "0" ou "R$ 0"), a revisar com dados reais. Preço não informado é oculto e contado.
-- **Acesso:** do OCM vem do tipo de uso ("Public…" é público, "Priv…" é restrito); a verificação em campo vence. O tipo da restrição ainda não é registrado.
+- **Acesso:** do OCM vem do tipo de uso ("Public…" é público, "Priv…" é restrito); a verificação em campo vence. Desde a Fase 4, a verificação registra o tipo de restrição, e a ficha mostra o tipo que veio dela.
 - **Gasto:** cada chamada ao Google é contada por tipo, com a faixa gratuita e o preço da tabela de nov/2026: busca de área a US$ 32 por mil, com 5.000 gratuitas, e ficha a US$ 25 por mil, com 1.000 gratuitas. A rota (Compute Routes Essentials, US$ 5 por mil, 10.000 gratuitas) e a busca ao longo da rota (Text Search Pro, US$ 32 por mil, 5.000 gratuitas) foram conferidas na página oficial de preços em 19/11/2026. O Google não é chamado se o gasto do mês mais o custo da próxima consulta atingir o teto. Os preços precisam ser conferidos na primeira fatura.
 - **PlugShare:** é excluído todo registro do OCM que tenha "plugshare" em qualquer campo, sem diferenciar maiúsculas.
 - **Licença:** entram só os registros com `IsOpenDataLicensed` e licença CC0 ou CC BY 4.0. O OCM escreve a CC0 de dois jeitos, "CC0" e "CC-0", e os dois são aceitos.
@@ -319,6 +351,14 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 - **Formato do domínio:** a tradução do OCM para o vocabulário do REVOLT, que cobre situação, tipo de conector e acesso, é feita na view `eletroposto`. A tradução da ficha do Google é feita na API, na hora do pedido. Os valores da fonte que não têm correspondência viram `OUTRO` ou `desconhecida`.
 - **Fonte do OCM desligada:** a verificação própria de um posto do OCM some do app junto com o posto. O registro próprio continua na base e em `GET /postos-proprios/:id`.
 - **Excluir dados:** também desliga a fonte ou o provedor, para que os dados não voltem na próxima atualização.
+- **Fase 4:**
+  - **Prazo do OCM:** a busca no OCM tem prazo (`OCM_TEMPO_LIMITE_MS`, padrão 60 s), como as chamadas ao Google. Passado o prazo, a atualização falha e a cópia anterior continua.
+  - **Carregador sem recarga:** `potencia_observada_kw: null` é a marca de não observada. Zero é recusado, e cada carregador precisa dizer se funcionou.
+  - **Avisos:** calculados a cada `GET /controle/avisos`, sem tabela nem envio. O aviso de 80% do teto vem da RNF-11 da arquitetura; o e-mail que ela pede ficou de fora. A falha na apuração aparece quando o gasto do mês não pode ser calculado; nesse caso, nenhuma consulta ao Google sai, porque o gasto é conferido antes de cada uma.
+  - **Corredor:** o trecho é o polígono `Via Dutra` de `corredor_verificado`. Preço e regras de cobrança contam só os da verificação própria (RN13): o preço do OCM não conta. Um posto do OCM com a fonte ou o provedor desligados sai do corredor, como sai do mapa.
+  - **Indicadores:** mínimo de 5 motoristas distintos por grupo (RN21), escolha de engenharia a revisar com o Curador.
+  - **Retorno em 30 dias:** o identificador rotativo dura 30 dias, então cada aparelho conta no máximo uma vez a cada 30 dias. O motorista que volta depois de mais de 30 dias aparece com outro identificador, como quem não voltou, e é isso que o indicador mede.
+  - **Telemetria:** só contagens por dia e tipo, sem área: a RNF-09 aceita área de cerca de 5 km, mas nenhum indicador pede. O ritmo é por IP; com muitos aparelhos atrás do mesmo IP da operadora (CGNAT), envios legítimos podem passar do limite e ser perdidos.
 - **Moderação (Fase 3):** uma tabela de decisões guarda tipo, alvo, motivo, data, Curador e, na correção, os valores originais. A correção muda a observação e a marca como corrigida; o duplicado confirmado cria um vínculo (`vinculo_duplicado`: oculto e mantido), sem fundir dados, e o posto oculto sai do mapa, do planejador e das paradas. O efeito e o registro da decisão são uma instrução só no banco.
 
 ## Pendentes (decisão do Guilherme)
@@ -330,10 +370,9 @@ Escolhas de engenharia que os PRDs e a arquitetura deixam em aberto.
 
 ## Fora desta fase
 
-- Indicadores (Fase 4), as Alterações 2, 4 e 5 do PRD de obtenção e a publicação da API.
-- Planejador: a telemetria do UC04 (viagens planejadas, trechos sem cobertura e paradas sem plano B); o acesso restrito, que hoje não impede um posto de virar parada; e mais de 9 paradas no link do Google Maps.
-- Cada carregador da ficha (`carregadores`) e o tipo de restrição de acesso: a verificação em campo ainda não registra esses dados, então saem como "não informado".
-- Telemetria, alertas ao Curador e histórico das mudanças de fontes e teto (guarda só a última, com data e autor).
+- A publicação da API.
+- Planejador: o acesso restrito, que hoje não impede um posto de virar parada, e mais de 9 paradas no link do Google Maps.
+- Avisos ao Curador por e-mail ou push, o aviso de erro alto na API (RNF-11) e a área aproximada nos eventos de telemetria.
 - Separação do banco em esquemas de obtenção e de app: as tabelas continuam no `public`.
 - A trava contra robô guarda a contagem na memória e usa o IP quando falta `X-Aparelho`. Atrás de um proxy, a API precisa confiar no cabeçalho do proxy para ver o IP real.
 - Os WON'T do PRD de obtenção: devolução ao OCM (RF12), regras do app (RF13), cópia periódica do Google (RF15) e outras fontes (RF16).

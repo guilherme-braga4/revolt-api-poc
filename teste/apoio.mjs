@@ -172,7 +172,7 @@ zerar();
 
 const TABELAS = ['ocm_posto', 'atualizacao_ocm', 'posto_proprio', 'verificacao', 'google_lugar', 'google_celula', 'consulta_google', 'fonte', 'ocm_provedor', 'teto_google',
   'conta', 'observacao', 'observacao_recusada', 'foto', 'contribuicao', 'reporte', 'reporte_envio',
-  'decisao', 'vinculo_duplicado', 'viagem'];
+  'decisao', 'vinculo_duplicado', 'viagem', 'historico_controle', 'evento_dia', 'abertura'];
 
 async function lerCorpo(req) {
   let texto = '';
@@ -221,6 +221,7 @@ async function tratar(req, res) {
   if (rota === 'GET /ocm/v3/poi') {
     estado.chamadas.ocm++;
     if (estado.ocm === 'fora_do_ar') return json(res, 503, { erro: 'OCM fora do ar (dublê)' });
+    if (estado.ocm === 'lento') await new Promise((ok) => setTimeout(ok, 3000)); // passa do OCM_TEMPO_LIMITE_MS do teste
     const corpo = JSON.stringify({ v2: OCM_V2, viagem: OCM_VIAGEM }[estado.ocm] ?? OCM_V1);
     if (estado.ocm === 'falha_no_meio') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -291,10 +292,34 @@ async function tratar(req, res) {
     zerar();
     bancoMudo = false;
     await destravar();
+    await db.query('ALTER TABLE IF EXISTS consulta_google_fora RENAME TO consulta_google'); // desfaz o modo "quebrada" da apuração
     await db.query(`TRUNCATE ${TABELAS.filter((t) => !['fonte', 'teto_google'].includes(t)).join(', ')} RESTART IDENTITY CASCADE`);
     await db.query(`UPDATE fonte SET ligada = true, alterada_em = now(), alterada_por = 'reset do teste'`);
     await db.query(`UPDATE teto_google SET valor_usd = 50, alterado_em = now(), alterado_por = 'reset do teste'`);
     return json(res, 200, { ok: true, banco });
+  }
+  // Consultas pagas ao Google já feitas no mês, para levar o gasto perto do teto sem chamar o Google.
+  if (rota === 'POST /__apoio/consultas') {
+    const { tipo, quantidade } = await lerCorpo(req);
+    await db.query(`INSERT INTO consulta_google (tipo, resultado) SELECT $1, '200' FROM generate_series(1, $2::int)`, [tipo, quantidade]);
+    return json(res, 200, { ok: true });
+  }
+  // Falha na apuração do gasto: a tabela das consultas pagas some até o modo "normal" (ou o reset).
+  if (rota === 'POST /__apoio/apuracao') {
+    const quebrada = (await lerCorpo(req)).modo === 'quebrada';
+    await db.query(quebrada ? 'ALTER TABLE consulta_google RENAME TO consulta_google_fora' : 'ALTER TABLE IF EXISTS consulta_google_fora RENAME TO consulta_google');
+    return json(res, 200, { apuracao: quebrada ? 'quebrada' : 'normal' });
+  }
+  // Abertura do app de N dias atrás, mais antiga do que POST /v1/eventos aceita, para testar a limpeza dos 90 dias.
+  if (rota === 'POST /__apoio/abertura-antiga') {
+    const { id_rotativo, dias } = await lerCorpo(req);
+    // Dias contados a partir de hoje em Brasília, como a API conta. O current_date do banco é UTC: das 21h à meia-noite
+    // ele já está no dia seguinte, e o dia "de 91 dias atrás" teria só 90 para a API.
+    await db.query(
+      `INSERT INTO abertura (id_rotativo, dia) VALUES ($1, (now() AT TIME ZONE 'America/Sao_Paulo')::date - $2::int) ON CONFLICT DO NOTHING`,
+      [id_rotativo, dias],
+    );
+    return json(res, 200, { ok: true });
   }
   if (rota === 'POST /__apoio/ocm') {
     estado.ocm = (await lerCorpo(req)).modo;

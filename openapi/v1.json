@@ -698,6 +698,87 @@
         ]
       }
     },
+    "/v1/curador/indicadores": {
+      "get": {
+        "description": "Parcela das chegadas em que o posto estava como o app informou (o indicador principal) e check-ins por semana no corredor da Via Dutra, no período pedido (padrão: os últimos 30 dias); motoristas que voltam em 30 dias, pela primeira abertura do app nos 30 dias que terminam 30 dias antes de ate; e as contagens da telemetria do app. Só agregados: grupo com menos de 5 motoristas distintos sai sem números (RN21). Cada indicador traz o dia mais recente dos dados usados.",
+        "operationId": "CuradorController_indicadores",
+        "parameters": [
+          {
+            "name": "de",
+            "required": false,
+            "in": "query",
+            "description": "Primeiro dia do período (dia em Brasília). Padrão: 29 dias antes de ate.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "ate",
+            "required": false,
+            "in": "query",
+            "description": "Último dia do período (dia em Brasília). Padrão: hoje.",
+            "schema": {
+              "format": "date",
+              "example": "2026-11-12",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndicadoresCurador"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Data malformada ou de depois de ate (erro pedido_invalido).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Conta sem papel de Curador (erro papel_curador_necessario).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Indicadores do app",
+        "tags": [
+          "curador"
+        ]
+      }
+    },
     "/v1/curador/decisoes": {
       "post": {
         "description": "Aceitar, corrigir ou remover uma contribuição, remover uma foto, resolver um reporte ou bloquear uma conta, sempre com motivo. Remover tira a contribuição da ficha. Corrigir faz a ficha mostrar os valores corrigidos e guarda os originais no registro. O duplicado confirmado oculta um dos dois postos no mapa e no planejador, sem fundir os dados. O motorista que reportou vê a resolução.",
@@ -1004,6 +1085,52 @@
         "summary": "Apagar uma viagem salva",
         "tags": [
           "viagens"
+        ]
+      }
+    },
+    "/v1/eventos": {
+      "post": {
+        "description": "Sem conta e sem atestado. Lista fechada de tipos, nenhum dado pessoal e nenhum identificador estável do aparelho: só o identificador aleatório de app_aberto, que o app troca a cada 30 dias, para o retorno em 30 dias. O app junta os eventos (até 100 por envio) e manda depois o que juntou sem conexão, de até 30 dias atrás. Envio recusado (400) não deve ser repetido. A API guarda só a contagem por dia e tipo; os dias de uso de cada identificador são apagados em 90 dias.",
+        "operationId": "EventosController_receber",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PedidoEventos"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Eventos contados."
+          },
+          "400": {
+            "description": "Tipo fora da lista, campo a mais ou fora do seu tipo, ou dia fora do intervalo (erro pedido_invalido).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Muitos envios do mesmo IP em 10 minutos (erro muitos_pedidos). Tente mais tarde.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Erro"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Eventos de telemetria do app",
+        "tags": [
+          "telemetria"
         ]
       }
     }
@@ -3127,6 +3254,251 @@
           "observacoes"
         ]
       },
+      "PeriodoIndicadores": {
+        "type": "object",
+        "properties": {
+          "de": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          },
+          "ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12"
+          }
+        },
+        "required": [
+          "de",
+          "ate"
+        ]
+      },
+      "IndicadorComoInformado": {
+        "type": "object",
+        "properties": {
+          "chegadas": {
+            "type": "number",
+            "nullable": true,
+            "description": "Chegadas do período: check-ins não removidos pelo Curador."
+          },
+          "como_informado": {
+            "type": "number",
+            "nullable": true,
+            "description": "Chegadas em que o posto estava como o app informou."
+          },
+          "parcela": {
+            "type": "number",
+            "nullable": true,
+            "description": "como_informado / chegadas, de 0 a 1: o indicador principal. null sem chegadas."
+          },
+          "suprimido": {
+            "type": "boolean",
+            "description": "true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21)."
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "chegadas",
+          "como_informado",
+          "parcela",
+          "suprimido",
+          "dados_ate"
+        ]
+      },
+      "SemanaNoCorredor": {
+        "type": "object",
+        "properties": {
+          "semana": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Segunda-feira da semana (de segunda a domingo)."
+          },
+          "checkins": {
+            "type": "number",
+            "nullable": true,
+            "description": "Check-ins da semana em postos do OCM e próprios do corredor."
+          },
+          "suprimido": {
+            "type": "boolean",
+            "description": "true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21)."
+          }
+        },
+        "required": [
+          "semana",
+          "checkins",
+          "suprimido"
+        ]
+      },
+      "IndicadorCheckinsNoCorredor": {
+        "type": "object",
+        "properties": {
+          "semanas": {
+            "description": "Só as semanas com algum check-in no corredor da Via Dutra.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SemanaNoCorredor"
+            }
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "semanas",
+          "dados_ate"
+        ]
+      },
+      "IndicadorRetorno": {
+        "type": "object",
+        "properties": {
+          "abriram": {
+            "type": "number",
+            "nullable": true,
+            "description": "Identificadores com a primeira abertura do app na janela primeira_abertura."
+          },
+          "voltaram": {
+            "type": "number",
+            "nullable": true,
+            "description": "Desses, os que abriram o app de novo em outro dia, em até 30 dias."
+          },
+          "parcela": {
+            "type": "number",
+            "nullable": true,
+            "description": "voltaram / abriram, de 0 a 1. null sem aberturas."
+          },
+          "suprimido": {
+            "type": "boolean",
+            "description": "true quando o grupo tem menos motoristas que minimo_motoristas_por_grupo: os números saem null (RN21)."
+          },
+          "primeira_abertura": {
+            "description": "Janela da primeira abertura: os 30 dias que terminam 30 dias antes de ate, para todos terem tido 30 dias para voltar.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PeriodoIndicadores"
+              }
+            ]
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "abriram",
+          "voltaram",
+          "parcela",
+          "suprimido",
+          "primeira_abertura",
+          "dados_ate"
+        ]
+      },
+      "UsoDoApp": {
+        "type": "object",
+        "properties": {
+          "app_aberto": {
+            "type": "integer",
+            "description": "Aberturas do app (o app manda uma por dia)."
+          },
+          "uso_sem_conexao": {
+            "type": "integer",
+            "description": "Usos do app sem conexão (Alteração 4)."
+          },
+          "legenda_aberta": {
+            "type": "integer",
+            "description": "Aberturas da legenda (Alteração 4)."
+          },
+          "viagem_planejada": {
+            "type": "integer",
+            "description": "Viagens planejadas (UC04)."
+          },
+          "viagem_salva": {
+            "type": "integer",
+            "description": "Viagens salvas (UC04)."
+          },
+          "viagem_aberta_na_navegacao": {
+            "type": "integer",
+            "description": "Viagens abertas na navegação (UC04)."
+          },
+          "trechos_sem_cobertura": {
+            "type": "integer",
+            "description": "Trechos sem cobertura, somados nas viagens planejadas."
+          },
+          "paradas_sem_plano_b": {
+            "type": "integer",
+            "description": "Paradas sem plano B, somadas nas viagens planejadas."
+          },
+          "dados_ate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "nullable": true,
+            "description": "Dia mais recente dos dados usados no indicador. null sem dados."
+          }
+        },
+        "required": [
+          "app_aberto",
+          "uso_sem_conexao",
+          "legenda_aberta",
+          "viagem_planejada",
+          "viagem_salva",
+          "viagem_aberta_na_navegacao",
+          "trechos_sem_cobertura",
+          "paradas_sem_plano_b",
+          "dados_ate"
+        ]
+      },
+      "IndicadoresCurador": {
+        "type": "object",
+        "properties": {
+          "periodo": {
+            "$ref": "#/components/schemas/PeriodoIndicadores"
+          },
+          "calculado_em": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "minimo_motoristas_por_grupo": {
+            "type": "number",
+            "example": 5,
+            "description": "Mínimo de motoristas distintos para um grupo mostrar números (RN21)."
+          },
+          "como_informado": {
+            "$ref": "#/components/schemas/IndicadorComoInformado"
+          },
+          "checkins_por_semana_no_corredor": {
+            "$ref": "#/components/schemas/IndicadorCheckinsNoCorredor"
+          },
+          "retorno_30_dias": {
+            "$ref": "#/components/schemas/IndicadorRetorno"
+          },
+          "uso_do_app": {
+            "$ref": "#/components/schemas/UsoDoApp"
+          }
+        },
+        "required": [
+          "periodo",
+          "calculado_em",
+          "minimo_motoristas_por_grupo",
+          "como_informado",
+          "checkins_por_semana_no_corredor",
+          "retorno_30_dias",
+          "uso_do_app"
+        ]
+      },
       "CorrecaoContribuicao": {
         "type": "object",
         "properties": {
@@ -3417,6 +3789,66 @@
           "conectores",
           "autonomia_km",
           "nome"
+        ]
+      },
+      "Evento": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "app_aberto",
+              "uso_sem_conexao",
+              "legenda_aberta",
+              "viagem_planejada",
+              "viagem_salva",
+              "viagem_aberta_na_navegacao"
+            ],
+            "description": "Lista fechada de tipos."
+          },
+          "dia": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-12",
+            "description": "Dia do evento em Brasília, de hoje até 30 dias atrás (o que juntou sem conexão vai depois)."
+          },
+          "id_rotativo": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Só em app_aberto, e obrigatório nele: UUID v4 aleatório que o app sorteia e troca 30 dias depois de sorteado. Nunca vai em outro evento."
+          },
+          "trechos_sem_cobertura": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Só em viagem_planejada, e obrigatório nele."
+          },
+          "paradas_sem_plano_b": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50,
+            "description": "Só em viagem_planejada, e obrigatório nele."
+          }
+        },
+        "required": [
+          "tipo",
+          "dia"
+        ]
+      },
+      "PedidoEventos": {
+        "type": "object",
+        "properties": {
+          "eventos": {
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Evento"
+            }
+          }
+        },
+        "required": [
+          "eventos"
         ]
       }
     }

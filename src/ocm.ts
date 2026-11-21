@@ -11,6 +11,37 @@ function licencaAberta(provedor: any): string | null {
   return null;
 }
 
+// Triagem de cada registro recebido do OCM: o motivo do descarte, ou o registro que entra na cópia, sempre com provedor e
+// licença (RN01). Licença fechada (RN03), qualquer campo que cite o PlugShare (RN04), provedor desligado pelo Curador
+// (RF10) e registro sem coordenada ficam de fora.
+export function triagemOcm(poi: any, provedoresDesligados: number[]): { motivo: string; registro?: undefined } | { motivo?: undefined; registro: any } {
+  const licenca = licencaAberta(poi.DataProvider);
+  const a = poi.AddressInfo ?? {};
+  if (!licenca) return { motivo: 'licenca_nao_aberta' };
+  if (JSON.stringify(poi).toLowerCase().includes('plugshare')) return { motivo: 'cita_plugshare' };
+  if (provedoresDesligados.includes(poi.DataProviderID)) return { motivo: 'provedor_desligado' };
+  if (a.Latitude == null || a.Longitude == null) return { motivo: 'sem_coordenada' };
+  return {
+    registro: {
+      ocm_id: poi.ID,
+      provedor_id: poi.DataProviderID,
+      provedor: poi.DataProvider.Title,
+      licenca,
+      titulo: a.Title,
+      endereco: [a.AddressLine1, a.Town, a.StateOrProvince].filter(Boolean).join(', '),
+      operacional: poi.StatusType?.IsOperational ?? null,
+      situacao: poi.StatusType?.Title ?? null,
+      lat: a.Latitude,
+      lng: a.Longitude,
+      dados: poi,
+    },
+  };
+}
+
+// Prazo da busca no OCM, com o corpo inteiro. Passado o prazo, a atualização falha e a cópia anterior continua (RF02).
+// A busca real do Brasil leva de 1 s a 3 s; o padrão deixa folga para rede lenta.
+const OCM_TEMPO_LIMITE_MS = Number(process.env.OCM_TEMPO_LIMITE_MS) || 60_000;
+
 @Injectable()
 export class OcmService {
   constructor(private db: Db) {}
@@ -27,7 +58,7 @@ export class OcmService {
 
     try {
       const url = `${process.env.OCM_URL}/poi?countrycode=BR&opendata=true&maxresults=10000&compact=false&verbose=false`;
-      const resposta = await fetch(url, { headers: { 'X-API-Key': process.env.OCM_API_KEY } });
+      const resposta = await fetch(url, { headers: { 'X-API-Key': process.env.OCM_API_KEY }, signal: AbortSignal.timeout(OCM_TEMPO_LIMITE_MS) });
       if (!resposta.ok) throw new Error(`OCM respondeu ${resposta.status}`);
       const recebidos: any[] = await resposta.json();
 
@@ -35,26 +66,9 @@ export class OcmService {
       const descartados = { licenca_nao_aberta: 0, cita_plugshare: 0, provedor_desligado: 0, sem_coordenada: 0 };
       const aceitos = [];
       for (const poi of recebidos) {
-        const licenca = licencaAberta(poi.DataProvider);
-        const a = poi.AddressInfo ?? {};
-        if (!licenca) descartados.licenca_nao_aberta++;
-        else if (JSON.stringify(poi).toLowerCase().includes('plugshare')) descartados.cita_plugshare++; // RN04, qualquer campo
-        else if (desligados.includes(poi.DataProviderID)) descartados.provedor_desligado++;
-        else if (a.Latitude == null || a.Longitude == null) descartados.sem_coordenada++;
-        else
-          aceitos.push({
-            ocm_id: poi.ID,
-            provedor_id: poi.DataProviderID,
-            provedor: poi.DataProvider.Title,
-            licenca,
-            titulo: a.Title,
-            endereco: [a.AddressLine1, a.Town, a.StateOrProvince].filter(Boolean).join(', '),
-            operacional: poi.StatusType?.IsOperational ?? null,
-            situacao: poi.StatusType?.Title ?? null,
-            lat: a.Latitude,
-            lng: a.Longitude,
-            dados: poi,
-          });
+        const t = triagemOcm(poi, desligados);
+        if (t.motivo) descartados[t.motivo]++;
+        else aceitos.push(t.registro);
       }
 
       // Troca atômica: a cópia nova só substitui a anterior se tudo der certo (RF02). Pool das tarefas: a base inteira
@@ -90,7 +104,8 @@ export class OcmService {
         cliente.release();
       }
     } catch (erro) {
-      return this.terminar(registro.id, 'falha', String(erro.message ?? erro), null);
+      const motivo = erro?.name === 'TimeoutError' ? `OCM não respondeu no prazo de ${OCM_TEMPO_LIMITE_MS / 1000} s` : String(erro.message ?? erro);
+      return this.terminar(registro.id, 'falha', motivo, null);
     }
   }
 

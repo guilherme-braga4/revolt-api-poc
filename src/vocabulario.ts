@@ -14,6 +14,8 @@ export const ORIGENS = ['open_charge_map', 'verificacao_propria', 'google'];
 export const SITUACOES = ['operacional', 'fora_de_operacao', 'planejado', 'fechado_definitivamente', 'desconhecida'];
 export const FUNCIONAMENTOS = ['funcionando', 'parcial', 'nao_funcionando', 'desativado', 'inexistente'];
 export const ACESSOS = ['publico', 'restrito'];
+// Tipos de restrição do acesso restrito (RF07 da obtenção).
+export const RESTRICOES_ACESSO = ['marca_de_veiculo', 'clientes_ou_hospedes', 'moradores', 'horario'];
 export const PAGAMENTOS = ['cartao_credito', 'cartao_debito', 'nfc', 'somente_dinheiro'];
 
 export const LICENCA_PROPRIA = 'Própria (REVOLT)';
@@ -47,3 +49,6 @@ export const diaEmBrasilia = (instante: Date | string) =>
   new Date(instante).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
 export const NAO_VERIFICADO = { situacao: 'nao_verificado', data: null };
+
+// Tipos de evento da telemetria própria do app (D-10). Lista fechada: outro tipo é recusado.
+export const TIPOS_EVENTO = ['app_aberto', 'uso_sem_conexao', 'legenda_aberta', 'viagem_planejada', 'viagem_salva', 'viagem_aberta_na_navegacao'];

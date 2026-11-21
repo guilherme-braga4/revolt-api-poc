@@ -7,6 +7,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import { writeFileSync } from 'node:fs';
 import { ControleController } from './controle.js';
+import { CorredorController } from './corredor.js';
 import { Db } from './db.js';
 import { GoogleController, GoogleService } from './google.js';
 import { OcmController, OcmService } from './ocm.js';
@@ -19,11 +20,12 @@ import { CuradorController } from './v1/curador.js';
 import { FichaController } from './v1/ficha.js';
 import { MapaController } from './v1/mapa.js';
 import { ViagensController } from './v1/viagens.js';
+import { EventosController } from './v1/eventos.js';
 import { ViagensSalvasController } from './v1/viagens-salvas.js';
 
 // Módulo obtenção: a POC evoluída (OCM, varredura e ficha do Google, verificação própria, teto e fontes). Rotas do Curador.
 @Module({
-  controllers: [OcmController, GoogleController, PropriosController, ControleController],
+  controllers: [OcmController, GoogleController, PropriosController, ControleController, CorredorController],
   providers: [Db, OcmService, GoogleService, Acesso, ContaGuard, ContribuicaoGuard, CuradorGuard],
   exports: [Db, GoogleService, Acesso, ContaGuard, ContribuicaoGuard, CuradorGuard],
 })
@@ -33,7 +35,7 @@ class ObtencaoModule {}
 @Module({
   imports: [ObtencaoModule],
   controllers: [MapaController, FichaController, ViagensController, ContaController, CheckinsController, FotosController, ReportesController, CuradorController,
-    ViagensSalvasController],
+    ViagensSalvasController, EventosController],
 })
 class AppV1Module {}
 

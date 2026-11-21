@@ -105,7 +105,7 @@
                   "const doc = pm.response.json();",
                   "pm.test('OpenAPI 3 com as rotas do app: mapa, ficha, viagens, conta, contribuições e Curador', () => {",
                   "  pm.expect(doc.openapi).to.match(/^3\\./);",
-                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}']);",
+                  "  pm.expect(Object.keys(doc.paths)).to.have.members(['/v1/checkins', '/v1/conta', '/v1/curador/decisoes', '/v1/curador/fila', '/v1/eletropostos/{id}', '/v1/fotos/{id}', '/v1/mapa', '/v1/reportes', '/v1/reportes/meus', '/v1/viagens', '/v1/viagens/planejar', '/v1/viagens/{id}', '/v1/curador/indicadores', '/v1/eventos']);",
                   "});",
                   "pm.test('Item do mapa e ficha exigem os quatro campos (RNF-01)', () => {",
                   "  for (const nome of ['Pino', 'Ficha']) pm.expect(doc.components.schemas[nome].required).to.include.members(['origem', 'verificacao', 'atualizado_em', 'condicoes_de_uso']);",
@@ -3188,7 +3188,7 @@
             "url": "{{base_url}}/verificacoes",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.736,\n    \"lng\": -45.124\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 150,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"restrito\",\n  \"preco\": \"R$ 2,50/kWh\"\n}"
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -22.736,\n    \"lng\": -45.124\n  },\n  \"funcionamento\": \"funcionando\",\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 150,\n      \"quantidade\": 1\n    }\n  ],\n  \"acesso\": \"restrito\",\n  \"preco\": \"R$ 2,50/kWh\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
             }
           }
         },
@@ -9762,6 +9762,3014 @@
           }
         }
       ]
+    },
+    {
+      "name": "13 · Fase 4 · Lacunas da obtenção, corredor da Dutra, indicadores e telemetria",
+      "item": [
+        {
+          "name": "Preparar: zerar banco de teste e dublês",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Importar o OCM do corredor (base para a seção)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Atualização ok', () => pm.expect(pm.response.json().resultado).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo lento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"lento\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OCM que passa do prazo: a atualização falha sem esperar a resposta (D1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));",
+                  "",
+                  "pm.test('Falha com o motivo do prazo', () => pm.expect(pm.response.json()).to.include({ resultado: 'falha', motivo: 'OCM não respondeu no prazo de 2 s' }));",
+                  "pm.test('Não esperou o OCM (prazo de 2 s; o dublê leva 3 s)', () => pm.expect(pm.response.responseTime).to.be.below(2900));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "A falha por prazo fica registrada para o Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const [ultima, anterior] = pm.response.json();",
+                  "pm.test('Última falhou pelo prazo, a anterior foi ok', () => {",
+                  "  pm.expect([ultima.resultado, ultima.motivo]).to.eql(['falha', 'OCM não respondeu no prazo de 2 s']);",
+                  "  pm.expect(anterior.resultado).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizacoes"
+          }
+        },
+        {
+          "name": "A cópia anterior do OCM continua inteira",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Os 9 postos do corredor continuam', () => pm.expect(pm.response.json().length).to.eql(9));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/ocm_posto"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verificação com cada carregador e o tipo de restrição do acesso (D2, RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('d2_proprio', p.id);",
+                  "pm.test('Guarda cada carregador e a restrição', () => {",
+                  "  pm.expect(p.verificacoes[0].carregadores).to.eql([",
+                  "    { tipo: 'CCS2', funcionou: true, potencia_observada_kw: 47.5 },",
+                  "    { tipo: 'CCS2', funcionou: false, potencia_observada_kw: null },",
+                  "  ]);",
+                  "  pm.expect([p.verificacoes[0].acesso, p.verificacoes[0].acesso_restricao]).to.eql(['restrito', 'clientes_ou_hospedes']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ficha: se cada carregador funcionou e a potência observada, sem zero quando não houve recarga (RF04 do app)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const a = pm.response.json().atributos;",
+                  "pm.test('Carregadores da verificação em campo, com a data', () => pm.expect(a.carregadores).to.eql({",
+                  "  valor: [",
+                  "    { tipo: 'CCS2', funcionou: true, potencia_observada_kw: 47.5 },",
+                  "    { tipo: 'CCS2', funcionou: false, potencia_observada_kw: null },",
+                  "  ],",
+                  "  origem: 'verificacao_propria', data: '2026-11-18',",
+                  "}));",
+                  "pm.test('Acesso restrito com o tipo de restrição', () => pm.expect(a.acesso).to.eql({",
+                  "  valor: { tipo: 'restrito', restricao: 'clientes_ou_hospedes' }, origem: 'verificacao_propria', data: '2026-11-18',",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/eletropostos/ocm-9101"
+          }
+        },
+        {
+          "name": "Recusa: acesso restrito sem o tipo de restrição (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso restrito exige acesso_restricao\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: tipo de restrição fora da lista (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso restrito exige acesso_restricao\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"vip\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: tipo de restrição com acesso público (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"acesso_restricao só vale com acesso restrito\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"publico\",\n  \"acesso_restricao\": \"horario\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: carregador sem a potência observada (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"potencia_observada_kw\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: carregador sem dizer se funcionou (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"se funcionou\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": null\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Recusa: potência observada zero em vez de não observada (RF07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('O motivo cita o problema', () => pm.expect(JSON.stringify(pm.response.json().message)).to.include(\"ou null quando não houve recarga\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ocm_id\": 9101,\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-18\",\n  \"localizacao\": {\n    \"lat\": -23.1905,\n    \"lng\": -45.879\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 60,\n      \"quantidade\": 2\n    }\n  ],\n  \"carregadores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": true,\n      \"potencia_observada_kw\": 47.5\n    },\n    {\n      \"tipo\": \"CCS2\",\n      \"funcionou\": false,\n      \"potencia_observada_kw\": 0\n    }\n  ],\n  \"funcionamento\": \"parcial\",\n  \"preco\": \"R$ 2,10/kWh\",\n  \"regras_cobranca\": \"Cobrança por kWh\",\n  \"acesso\": \"restrito\",\n  \"acesso_restricao\": \"clientes_ou_hospedes\"\n}"
+            }
+          }
+        },
+        {
+          "name": "As recusas não gravaram verificação",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só a verificação completa', () => pm.expect(pm.response.json().verificacoes.length).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/postos-proprios/{{d2_proprio}}"
+          }
+        },
+        {
+          "name": "Avisos: a última atualização do OCM falhou pelo prazo (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Só o aviso da atualização do OCM, com o motivo e a data', () => {",
+                  "  pm.expect(tipos).to.eql(['atualizacao_ocm_falhou']);",
+                  "  pm.expect(av[0].mensagem).to.include('OCM não respondeu no prazo de 2 s');",
+                  "  pm.expect(new Date(av[0].desde).getTime()).to.be.above(Date.now() - 600000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Atualizar o OCM de novo, agora com sucesso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: 1.040 fichas do Google no mês (US$ 1,00 depois das 1.000 grátis)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/consultas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ficha\",\n  \"quantidade\": 1040\n}"
+            }
+          }
+        },
+        {
+          "name": "Teto de US$ 1,20: o gasto chega a 83%",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Gasto de US$ 1,00, sem teto atingido', () => pm.expect([pm.response.json().gasto_usd, pm.response.json().teto_atingido]).to.eql([1, false]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 1.2,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: gasto a 80% do teto ou mais (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Aviso de teto próximo, e o do OCM sumiu', () => {",
+                  "  pm.expect(tipos).to.eql(['teto_proximo']);",
+                  "  pm.expect(av[0].mensagem).to.include('83% do teto');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Teto de US$ 1,00: atingido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Teto atingido', () => pm.expect(pm.response.json().teto_atingido).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 1,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Desligar a fonte google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": false,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Excluir os dados do provedor 999 do OCM (desliga e apaga)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Nada a apagar', () => pm.expect(pm.response.json().apagados).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/999/excluir-dados",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: teto atingido, fonte e provedor desligados (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Um aviso para cada situação', () => pm.expect(tipos).to.eql(['teto_atingido', 'fonte_desligada', 'provedor_ocm_desligado']));",
+                  "pm.test('Fonte e provedor com autor e data da mudança', () => {",
+                  "  pm.expect(av[1].mensagem).to.eql('A fonte google está desligada (por Curador).');",
+                  "  pm.expect(av[2].mensagem).to.eql('O provedor 999 do OCM está desligado (por Curador).');",
+                  "  pm.expect(new Date(av[1].desde).getTime()).to.be.above(Date.now() - 600000);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Preparar: apuração do gasto quebrada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/apuracao",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"quebrada\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: o gasto não pode ser apurado (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Aviso de falha na apuração no lugar do aviso de teto; os demais continuam', () =>",
+                  "  pm.expect(tipos).to.eql(['gasto_nao_apurado', 'fonte_desligada', 'provedor_ocm_desligado']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Preparar: apuração do gasto de volta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/apuracao",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"normal\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Religar a fonte google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/fontes/google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligada\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Religar o provedor 999 do OCM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/provedores-ocm/999",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ligado\": true,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Teto de volta a US$ 50",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/controle/teto",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor_usd\": 50,\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Avisos: tudo normal (D3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const av = pm.response.json().avisos;",
+                  "const tipos = av.map((a) => a.tipo);",
+                  "",
+                  "pm.test('Nenhum aviso', () => pm.expect(av).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Histórico das mudanças de teto, fontes e provedores, com data e autor (D3, UC06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const h = pm.response.json();",
+                  "pm.test('Cada mudança, da mais recente para a mais antiga', () => pm.expect(h.map(({ alvo, de, para, autor }) => [alvo, de, para, autor])).to.eql([",
+                  "  ['teto', '1', '50', 'Curador'],",
+                  "  ['provedor_ocm:999', 'desligado', 'ligado', 'Curador'],",
+                  "  ['fonte:google', 'desligada', 'ligada', 'Curador'],",
+                  "  ['provedor_ocm:999', null, 'dados excluídos (0 registros)', 'Curador'],",
+                  "  ['provedor_ocm:999', 'ligado', 'desligado', 'Curador'],",
+                  "  ['fonte:google', 'ligada', 'desligada', 'Curador'],",
+                  "  ['teto', '1.2', '1', 'Curador'],",
+                  "  ['teto', '50', '1.2', 'Curador'],",
+                  "]));",
+                  "pm.test('Com a data de cada uma', () => h.forEach((m) => pm.expect(new Date(m.feita_em).getTime()).to.be.above(Date.now() - 600000)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/historico"
+          }
+        },
+        {
+          "name": "Avisos e histórico são só do Curador [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/controle/avisos"
+          }
+        },
+        {
+          "name": "Preparar: lugar do Google dentro do trecho da Via Dutra",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/google-lugar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"corredorGoogle\",\n  \"lat\": -22.62445,\n  \"lng\": -44.91375,\n  \"dias\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: posto próprio novo no trecho, verificado sem preço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.collectionVariables.set('d4_proprio', 'propria-' + pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-10\",\n  \"localizacao\": {\n    \"lat\": -22.86405,\n    \"lng\": -45.23811\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"CCS2\",\n      \"potencia_kw\": 40,\n      \"quantidade\": 1\n    }\n  ],\n  \"funcionamento\": \"funcionando\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor: cada posto com o estado certo, sem lugar do Google (D4, UC07)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // dia em Brasília (UTC-3)",
+                  "const dias = (d) => Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5);",
+                  "",
+                  "const r = pm.response.json();",
+                  "const proprio = pm.collectionVariables.get('d4_proprio');",
+                  "const p = Object.fromEntries(r.postos.map((x) => [x.id, x]));",
+                  "pm.collectionVariables.set('d4_ocm_em', r.ocm_atualizado_em);",
+                  "pm.test('Os 7 postos do OCM no trecho e o próprio novo; nenhum lugar do Google (RN18)', () => {",
+                  "  pm.expect(Object.keys(p).sort()).to.eql(['ocm-9101', 'ocm-9102', 'ocm-9104', 'ocm-9105', 'ocm-9107', 'ocm-9108', 'ocm-9109', proprio].sort());",
+                  "  pm.expect(JSON.stringify(r)).to.not.include('google');",
+                  "});",
+                  "pm.test('Verificado com preço e regras', () => pm.expect(p['ocm-9101']).to.include({ verificado: true, ultima_verificacao: '2026-11-18', tem_preco: true, tem_regras_cobranca: true }));",
+                  "pm.test('Verificado sem preço', () => pm.expect(p[proprio]).to.include({ verificado: true, ultima_verificacao: '2026-11-10', tem_preco: false, tem_regras_cobranca: false }));",
+                  "pm.test('Não verificado (RN13)', () => pm.expect(p['ocm-9102']).to.include({ verificado: false, ultima_verificacao: null, tem_preco: false }));",
+                  "pm.test('Indicadores batem com a contagem manual do trecho', () => {",
+                  "  const verificados = r.postos.filter((x) => x.verificado);",
+                  "  const completos = r.postos.filter((x) => x.tem_preco && x.tem_regras_cobranca);",
+                  "  const idades = verificados.map((x) => dias(x.ultima_verificacao)).sort((a, b) => a - b);",
+                  "  pm.expect(r.indicadores).to.eql({",
+                  "    postos: 8, verificados: 2, parcela_verificados: 0.25, com_preco_e_regras: 1, parcela_com_preco_e_regras: 0.125,",
+                  "    idade_mediana_ultima_verificacao_dias: (dias('2026-11-18') + dias('2026-11-10')) / 2,",
+                  "  });",
+                  "  pm.expect([verificados.length / r.postos.length, completos.length / r.postos.length, (idades[0] + idades[1]) / 2])",
+                  "    .to.eql([r.indicadores.parcela_verificados, r.indicadores.parcela_com_preco_e_regras, r.indicadores.idade_mediana_ultima_verificacao_dias]);",
+                  "});",
+                  "pm.test('Data dos dados usados: OCM e verificação mais recente', () => {",
+                  "  pm.expect(new Date(r.ocm_atualizado_em).getTime()).to.be.above(Date.now() - 600000);",
+                  "  pm.expect(r.ultima_verificacao).to.eql('2026-11-18');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo fora_do_ar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"fora_do_ar\"\n}"
+            }
+          }
+        },
+        {
+          "name": "OCM fora do ar: a atualização falha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 502', () => pm.response.to.have.status(502));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Com a cópia do OCM desatualizada por falha, a situação traz a data da última atualização que deu certo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Mesma data de antes da falha e os mesmos 8 postos', () => {",
+                  "  pm.expect(r.ocm_atualizado_em).to.eql(pm.collectionVariables.get('d4_ocm_em'));",
+                  "  pm.expect(r.indicadores.postos).to.eql(8);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: OCM do dublê no modo viagem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/ocm",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modo\": \"viagem\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor é só do Curador [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: token de conta de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_motorista_d4', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-d4\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Situação do corredor recusada a motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_motorista_d4}}"
+              }
+            ],
+            "url": "{{base_url}}/corredor"
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m1', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m1\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m2', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m3', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m4', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m4\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m5",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m5', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m5\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token do motorista m6",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_ind_m6', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"ind-m6\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m1 em ocm-9101 no dia 2026-11-09, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0001-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-09\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m2 em ocm-9102 no dia 2026-11-10, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0002-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9102\",\n  \"data_observacao\": \"2026-11-10\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m3 em ocm-9105 no dia 2026-11-11, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m3}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0003-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9105\",\n  \"data_observacao\": \"2026-11-11\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m4 em ocm-9108 no dia 2026-11-12, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m4}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0004-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9108\",\n  \"data_observacao\": \"2026-11-12\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m5 em ocm-9101 no dia 2026-11-14, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('d5_contrib_m5', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m5}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0005-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-14\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m1 em ocm-9109 no dia 2026-11-16, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0006-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9109\",\n  \"data_observacao\": \"2026-11-16\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m2 em ocm-9101 no dia 2026-11-17, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0007-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9101\",\n  \"data_observacao\": \"2026-11-17\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m3 em ocm-9106 no dia 2026-11-17, nao",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m3}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0008-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"ocm-9106\",\n  \"data_observacao\": \"2026-11-17\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"nao\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: check-in de m6 em google-corredorGoogle no dia 2026-11-18, sim",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m6}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/checkins",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chave\": \"5d5e0009-0000-4000-8000-000000000000\",\n  \"eletroposto_id\": \"google-corredorGoogle\",\n  \"data_observacao\": \"2026-11-18\",\n  \"carregou\": true,\n  \"estava_como_informado\": \"sim\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Indicadores do período de teste batem com a contagem manual (D5, RF15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Período pedido e data do cálculo', () => {",
+                  "  pm.expect(r.periodo).to.eql({ de: '2026-11-01', ate: '2026-11-30' });",
+                  "  pm.expect(new Date(r.calculado_em).getTime()).to.be.above(Date.now() - 600000);",
+                  "});",
+                  "pm.test('Indicador principal: 6 de 9 chegadas como o app informou, com a data dos dados', () =>",
+                  "  pm.expect(r.como_informado).to.eql({ chegadas: 9, como_informado: 6, parcela: 6 / 9, suprimido: false, dados_ate: '2026-11-18' }));",
+                  "pm.test('Check-ins por semana no corredor: a semana com 2 motoristas sai suprimida (RN21)', () =>",
+                  "  pm.expect(r.checkins_por_semana_no_corredor).to.eql({",
+                  "    semanas: [{ semana: '2026-11-09', checkins: 5, suprimido: false }, { semana: '2026-11-16', checkins: null, suprimido: true }],",
+                  "    dados_ate: '2026-11-17',",
+                  "  }));",
+                  "pm.test('Mínimo de motoristas por grupo', () => pm.expect(r.minimo_motoristas_por_grupo).to.eql(5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-01&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Curador remove um check-in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/decisoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"tipo\": \"remover_contribuicao\", \"motivo\": \"teste dos indicadores\", \"contribuicao_id\": {{d5_contrib_m5}}}"
+            }
+          }
+        },
+        {
+          "name": "Check-in removido sai dos indicadores; a semana fica com 4 motoristas e sai suprimida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('8 chegadas, 6 como o app informou', () => pm.expect([r.como_informado.chegadas, r.como_informado.como_informado, r.como_informado.parcela]).to.eql([8, 6, 0.75]));",
+                  "pm.test('Semana de 09/11 suprimida', () => pm.expect(r.checkins_por_semana_no_corredor.semanas[0]).to.eql({ semana: '2026-11-09', checkins: null, suprimido: true }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-01&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Período só da segunda semana: 4 motoristas, indicador principal suprimido (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "pm.test('Sem números, com a data dos dados', () =>",
+                  "  pm.expect(pm.response.json().como_informado).to.eql({ chegadas: null, como_informado: null, parcela: null, suprimido: true, dados_ate: '2026-11-18' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-16&ate=2026-11-30"
+          }
+        },
+        {
+          "name": "Sem período: os últimos 30 dias, até hoje em Brasília",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // dia em Brasília (UTC-3)",
+                  "const dias = (d) => Math.round((Date.parse(hoje) - Date.parse(d)) / 864e5);",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('De hoje menos 29 dias até hoje', () => pm.expect(r.periodo).to.eql({ de: new Date(Date.parse(hoje) - 29 * 864e5).toISOString().slice(0, 10), ate: hoje }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Período invertido é recusado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=2026-11-20&ate=2026-11-10"
+          }
+        },
+        {
+          "name": "Data malformada é recusada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de=20/11/2026"
+          }
+        },
+        {
+          "name": "Indicadores recusados a motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_ind_m1}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Indicadores pedem conta [sem conta]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/curador/indicadores"
+          }
+        },
+        {
+          "name": "Preparar: dias relativos a hoje em Brasília",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);",
+                  "const d = (n) => new Date(Date.parse(hoje) - n * 864e5).toISOString().slice(0, 10);",
+                  "for (const n of [0, 2, 10, 15, 18, 19, 20, 29, 31, 47]) pm.collectionVariables.set('dia_' + n, d(n));",
+                  "pm.collectionVariables.set('dia_amanha', d(-1));",
+                  "pm.collectionVariables.set('dia_mais_12', d(-12));",
+                  "pm.collectionVariables.set('dia_mais_30', d(-30));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria sem conta: um evento de cada tipo (D6, D-10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_20}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    },\n    {\n      \"tipo\": \"uso_sem_conexao\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_0}}\",\n      \"trechos_sem_cobertura\": 2,\n      \"paradas_sem_plano_b\": 1\n    },\n    {\n      \"tipo\": \"viagem_salva\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"viagem_aberta_na_navegacao\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Guarda só a contagem por dia e tipo, sem nada da pessoa ou do aparelho",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const linhas = pm.response.json();",
+                  "pm.test('Só dia, tipo e contagens', () => linhas.forEach((l) => pm.expect(Object.keys(l).sort()).to.eql(['dia', 'paradas_sem_plano_b', 'quantidade', 'tipo', 'trechos_sem_cobertura'])));",
+                  "pm.test('Os seis tipos contados', () => pm.expect(linhas.map((l) => l.tipo).sort()).to.eql(['app_aberto', 'legenda_aberta', 'uso_sem_conexao', 'viagem_aberta_na_navegacao', 'viagem_planejada', 'viagem_salva']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/evento_dia"
+          }
+        },
+        {
+          "name": "O identificador rotativo fica só com o dia de uso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Uma linha: identificador e dia', () => pm.expect(pm.response.json().map((l) => Object.keys(l).sort())).to.eql([['dia', 'id_rotativo']]));",
+                  "pm.test('O do app_aberto', () => pm.expect(pm.response.json()[0].id_rotativo).to.eql('a0000000-0000-4000-8000-00000000000a'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria juntada sem conexão e mandada depois, sem atestado [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_15}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_20}}\",\n      \"id_rotativo\": \"b0000000-0000-4000-8000-00000000000b\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_19}}\",\n      \"id_rotativo\": \"b0000000-0000-4000-8000-00000000000b\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_18}}\",\n      \"id_rotativo\": \"c0000000-0000-4000-8000-00000000000c\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_2}}\",\n      \"id_rotativo\": \"c0000000-0000-4000-8000-00000000000c\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_18}}\",\n      \"id_rotativo\": \"d0000000-0000-4000-8000-00000000000d\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"e0000000-0000-4000-8000-00000000000e\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"f0000000-0000-4000-8000-00000000000f\"\n    },\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_10}}\",\n      \"id_rotativo\": \"f0000000-0000-4000-8000-00000000000f\"\n    },\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_2}}\",\n      \"trechos_sem_cobertura\": 0,\n      \"paradas_sem_plano_b\": 3\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: tipo fora da lista [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"tipo must be one of\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"tela_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: app_aberto sem o identificador [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo vai só no evento app_aberto\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: identificador em outro evento, que ligaria os eventos [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo vai só no evento app_aberto\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\",\n      \"id_rotativo\": \"a0000000-0000-4000-8000-00000000000a\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: viagem planejada sem os trechos sem cobertura [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"trechos_sem_cobertura vai só no evento viagem_planejada\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"viagem_planejada\",\n      \"dia\": \"{{dia_0}}\",\n      \"paradas_sem_plano_b\": 0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: dia no futuro, e o lote inteiro fica de fora [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"dia precisa estar entre\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_amanha}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: dia de mais de 30 dias atrás [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"dia precisa estar entre\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"uso_sem_conexao\",\n      \"dia\": \"{{dia_31}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: campo a mais, como uma posição [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"property lat should not exist\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\",\n      \"lat\": -23.19\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: identificador que não é UUID v4 aleatório [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"id_rotativo must be a UUID\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"app_aberto\",\n      \"dia\": \"{{dia_0}}\",\n      \"id_rotativo\": \"6ba7b810-9dad-11d1-80b4-00c04fd430c8\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: mais de 100 eventos num envio [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"no more than 100\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    },\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Telemetria recusada: envio sem eventos [sem atestado]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "pm.test('Motivo', () => pm.expect(pm.response.json()).to.include({ erro: 'pedido_invalido' }) && pm.expect(pm.response.json().mensagem).to.include(\"at least 1\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Indicadores: retorno em 30 dias e uso do app batem com a contagem manual (D6, RF15)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nenhum motorista identificável: sem conta, pseudônimo nem identificador', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(t).to.not.match(/ind-m\\d|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|autor|conta_id/);",
+                  "});",
+                  "",
+                  "const r = pm.response.json();",
+                  "const v = (n) => pm.collectionVariables.get(n);",
+                  "// Contagem manual: a, b, c, d, e, f abriram o app pela primeira vez na janela; a (20 -> 15), b (20 -> 19) e c (18 -> 2)",
+                  "// voltaram em outro dia em até 30 dias; d e e não voltaram; f abriu duas vezes no mesmo dia, o que não é volta.",
+                  "pm.test('Retorno em 30 dias: 3 de 6', () => pm.expect(r.retorno_30_dias).to.eql({",
+                  "  abriram: 6, voltaram: 3, parcela: 0.5, suprimido: false, primeira_abertura: { de: v('dia_29'), ate: v('dia_0') }, dados_ate: v('dia_2'),",
+                  "}));",
+                  "// Contagem manual: 10 eventos app_aberto (1 + 9); um de cada outro tipo, e 2 viagens planejadas com 2 + 0 trechos e 1 + 3",
+                  "// paradas. Os envios recusados não contam.",
+                  "pm.test('Uso do app: só contagens', () => pm.expect(r.uso_do_app).to.eql({",
+                  "  app_aberto: 10, uso_sem_conexao: 1, legenda_aberta: 1, viagem_planejada: 2, viagem_salva: 1, viagem_aberta_na_navegacao: 1,",
+                  "  trechos_sem_cobertura: 2, paradas_sem_plano_b: 4, dados_ate: v('dia_0'),",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de={{dia_29}}&ate={{dia_mais_30}}"
+          }
+        },
+        {
+          "name": "Indicadores: janela com só 4 identificadores sai suprimida (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const v = (n) => pm.collectionVariables.get(n);",
+                  "pm.test('a, b, c e d na janela: sem números', () => pm.expect(pm.response.json().retorno_30_dias).to.eql({",
+                  "  abriram: null, voltaram: null, parcela: null, suprimido: true, primeira_abertura: { de: v('dia_47'), ate: v('dia_18') }, dados_ate: v('dia_2'),",
+                  "}));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_curador}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/curador/indicadores?de={{dia_29}}&ate={{dia_mais_12}}"
+          }
+        },
+        {
+          "name": "Preparar: dia de uso de 91 dias atrás",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/abertura-antiga",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_rotativo\": \"00000000-0000-4000-8000-0000000000a9\",\n  \"dias\": 91\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: dia de uso de 89 dias atrás",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/abertura-antiga",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_rotativo\": \"00000000-0000-4000-8000-0000000000b8\",\n  \"dias\": 89\n}"
+            }
+          }
+        },
+        {
+          "name": "Um envio de telemetria apaga os dias de uso com mais de 90 dias (RNF-09)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "O de 91 dias saiu; o de 89 ficou",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const ids = pm.response.json().map((l) => l.id_rotativo);",
+                  "pm.test('Limpeza dos 90 dias', () => {",
+                  "  pm.expect(ids).to.not.include('00000000-0000-4000-8000-0000000000a9');",
+                  "  pm.expect(ids).to.include('00000000-0000-4000-8000-0000000000b8');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/tabela/abertura"
+          }
+        },
+        {
+          "name": "Telemetria: muitos envios do mesmo IP em 10 minutos são recusados [sem atestado]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const corpo = JSON.stringify({ eventos: [{ tipo: 'legenda_aberta', dia: pm.collectionVariables.get('dia_0') }] });",
+                  "for (let i = 0; i < 20; i++)",
+                  "  pm.sendRequest({ url: pm.variables.get('base_url') + '/v1/eventos', method: 'POST', header: { 'Content-Type': 'application/json' }, body: { mode: 'raw', raw: corpo } }, () => {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 429', () => pm.response.to.have.status(429));",
+                  "",
+                  "pm.test('Erro muitos_pedidos', () => pm.expect(pm.response.json().erro).to.eql('muitos_pedidos'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/eventos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"tipo\": \"legenda_aberta\",\n      \"dia\": \"{{dia_0}}\"\n    }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 · Auditoria de aceite · lacunas fechadas na Wave E",
+      "item": [
+        {
+          "name": "Preparar: zerar banco de teste e dublês",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Só roda contra o banco de teste', () => pm.expect(pm.response.json().banco).to.match(/_teste$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{apoio_url}}/__apoio/reset"
+          }
+        },
+        {
+          "name": "Preparar: token de conta do Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_curador', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"curador-teste\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: token de conta de motorista",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('token_motorista_e', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{apoio_url}}/__apoio/token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"conta\",\n  \"sub\": \"motorista-auditoria\"\n}"
+            }
+          }
+        },
+        {
+          "name": "[sem conta] Varredura do Google sem conta não começa (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) =>",
+                  "  pm.test('Nenhuma busca no Google', () => pm.expect(r.json().chamadas.google_busca).to.eql(0)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Varredura do Google disparada por motorista não começa (RN21)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.sendRequest(pm.variables.get('apoio_url') + '/__apoio/chamadas', (e, r) =>",
+                  "  pm.test('Nenhuma busca no Google', () => pm.expect(r.json().chamadas.google_busca).to.eql(0)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_motorista_e}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: importar o OCM (São José dos Campos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('Atualização terminou com sucesso', () => pm.expect(pm.response.json().resultado).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/ocm/atualizar"
+          }
+        },
+        {
+          "name": "Preparar: varredura do Google disparada pelo Curador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/google/varredura",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limite\": 100\n}"
+            }
+          }
+        },
+        {
+          "name": "Preparar: posto próprio Tipo 2 ao lado do lugar dubleA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "pm.collectionVariables.set('posto_e_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/verificacoes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": \"campo\",\n  \"autor\": \"Curador\",\n  \"data_observacao\": \"2026-11-12\",\n  \"localizacao\": {\n    \"lat\": -23.1862,\n    \"lng\": -45.8762\n  },\n  \"conectores\": [\n    {\n      \"tipo\": \"TIPO_2\",\n      \"potencia_kw\": 22,\n      \"quantidade\": 1\n    }\n  ],\n  \"funcionamento\": \"funcionando\",\n  \"acesso\": \"publico\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mapa sem filtro numa área com postos das três origens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "const propria = 'propria-' + pm.collectionVariables.get('posto_e_id');",
+                  "pm.test('As três origens na área', () => pm.expect([...new Set(r.pinos.map((p) => p.origem))].sort()).to.eql(['google', 'open_charge_map', 'verificacao_propria']));",
+                  "pm.test('Contagem manual: dois do OCM, o próprio e dois lugares do Google', () =>",
+                  "  pm.expect(r.pinos.map((p) => p.id).sort()).to.eql(['google-dubleA', 'google-dubleB', 'ocm-9001', 'ocm-9002', propria].sort()));",
+                  "pm.test('Sem filtro, nada oculto', () => pm.expect([r.ocultos.total, r.ocultos.sem_contagem.ha_ocultos]).to.eql([0, false]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Filtro de conector com as três origens: compatíveis, ocultos por motivo e aviso do Google sem número (Alt. 1 do app)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "pm.test('Só o compatível aparece: o próprio Tipo 2', () => pm.expect(r.pinos.map((p) => p.id)).to.eql(['propria-' + pm.collectionVariables.get('posto_e_id')]));",
+                  "pm.test('Os dois do OCM entram na contagem de ocultos pelo conector (RN04 do app)', () => {",
+                  "  pm.expect(r.ocultos.total).to.eql(2);",
+                  "  pm.expect(r.ocultos.por_motivo).to.eql({ conector: 2, potencia: 0, rapida: 0, publico: 0, gratuito: 0 });",
+                  "});",
+                  "pm.test('Lugares do Google ocultos só com o aviso, sem número (RN08 do app)', () => {",
+                  "  pm.expect(r.pinos.filter((p) => p.origem === 'google')).to.eql([]);",
+                  "  pm.expect(r.ocultos.sem_contagem).to.eql({ ha_ocultos: true, motivo: 'filtro' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14&conectores=TIPO_2"
+          }
+        },
+        {
+          "name": "Preparar: vincular o lugar dubleA ao posto próprio ao lado (RF08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/postos-proprios/{{posto_e_id}}/vinculo-google",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"place_id\": \"dubleA\",\n  \"autor\": \"Curador\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Depois do vínculo, o mapa não mostra dubleA separado (RN17)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "pm.test('dubleA não é entregue separado; dubleB continua', () => {",
+                  "  const ids = pm.response.json().pinos.map((p) => p.id);",
+                  "  pm.expect(ids).to.not.include('google-dubleA');",
+                  "  pm.expect(ids).to.include('google-dubleB');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/mapa?bbox=-45.92886,-23.23492,-45.83114,-23.14508&zoom=14"
+          }
+        },
+        {
+          "name": "Lugar do Google vinculado a um registro próprio continua na resposta da rota (Alt. 7 da obtenção, RN22)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const r = pm.response.json();",
+                  "const google = r.eletropostos_google;",
+                  "pm.test('Lugares do Google da rota disponíveis', () => pm.expect([google.disponivel, google.motivo]).to.eql([true, null]));",
+                  "pm.test('dubleA, vinculado ao posto próprio, continua na lista, como lugar do Google', () => {",
+                  "  const a = google.eletropostos.find((e) => e.id === 'google-dubleA');",
+                  "  pm.expect(a, 'google-dubleA').to.be.an('object');",
+                  "  pm.expect(a.origem).to.eql('google');",
+                  "  pm.expect(a.condicoes_de_uso.exibicao).to.eql('somente_sobre_mapa_google');",
+                  "});",
+                  "pm.test('Os cinco lugares que a busca do Google devolveu', () =>",
+                  "  pm.expect(google.eletropostos.map((e) => e.id).sort()).to.eql(['google-dubleA', 'google-dubleB', 'google-dubleResende', 'google-dubleRota', 'google-dubleViagem']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Aparelho",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/viagens/planejar",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"origem\": {\n    \"lat\": -23.19,\n    \"lng\": -45.88\n  },\n  \"destino\": {\n    \"lat\": -22.52,\n    \"lng\": -44.1\n  },\n  \"conectores\": [\n    \"CCS2\"\n  ],\n  \"autonomia_km\": 250\n}"
+            }
+          }
+        }
+      ]
     }
   ],
   "event": [
@@ -9791,11 +12799,11 @@
           "    );",
           "}",
           "",
-          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle) exigem a conta do Curador: todo pedido",
+          "// Rotas do módulo obtenção (/ocm, /google, /verificacoes, /postos-proprios, /controle, /corredor) exigem a conta do Curador: todo pedido",
           "// leva o token de conta do dublê do login com o identificador de CURADOR_CONTAS, menos os marcados com \"[sem conta]\" no nome",
           "// e os que já trazem o seu próprio Authorization (testes de conta sem papel de Curador).",
           "const urlDoPedido = pm.variables.replaceIn(pm.request.url.toString());",
-          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle)(\\/|$)/.test(pm.request.url.getPath())",
+          "if (urlDoPedido.startsWith(pm.variables.get('base_url')) && /^\\/(ocm|google|verificacoes|postos-proprios|controle|corredor)(\\/|$)/.test(pm.request.url.getPath())",
           "    && !pm.info.requestName.includes('[sem conta]') && !pm.request.headers.has('Authorization')) {",
           "  const usarConta = (token) => pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
           "  const guardada = pm.collectionVariables.get('conta_curador');",
